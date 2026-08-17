@@ -7,14 +7,14 @@
 Descarga, extrae y formatea al 100% las Declaraciones de Intereses
 y Patrimonio (DIP) de autoridades públicas desde InfoProbidad.cl.
 
-Resuelve el problema de secciones ocultas/plegadas y genera:
-1. Archivo Markdown estructurado para notas periodísticas.
-2. Archivo HTML elegante y 100% imprimible/exportable a PDF.
-3. Archivo JSON para cruce automatizado de datos.
+Soporta todos los formatos de URL y códigos:
+- URLs directas: /Declaracion/Declaracion?ID=1698949
+- URLs con hash: /Declaracion/BuscarDeclaracion?declaracion=cd68d24...
+- IDs numéricos o hashes de 32 caracteres.
 
 Uso:
-    python scripts/extractor_infoprobidad.py "https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?declaracion=cd68d240594343524591e376e89d9e9e"
-    python scripts/extractor_infoprobidad.py cd68d240594343524591e376e89d9e9e
+    python scripts/extractor_infoprobidad.py "https://www.infoprobidad.cl/Declaracion/Declaracion?ID=1698949"
+    python scripts/extractor_infoprobidad.py 1698949 --dest "alcalde llanquihue/documentos"
 """
 
 import sys
@@ -27,39 +27,60 @@ from bs4 import BeautifulSoup
 from pathlib import Path
 
 
-def normalizar_id(entrada: str) -> str:
-    """Extrae el hash/ID hexadecimal de 32 caracteres desde una URL o texto."""
-    match = re.search(r'([a-fA-F0-9]{32})', entrada)
-    if match:
-        return match.group(1)
-    return entrada.strip()
-
-
-def descargar_declaracion_html(declaracion_id: str) -> str:
-    """Descarga el HTML íntegro de la declaración desde InfoProbidad."""
-    urls_a_probar = [
-        f"https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?declaracion={declaracion_id}",
-        f"https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?IDCargo={declaracion_id}",
-    ]
-    
+def descargar_declaracion_html(entrada: str) -> tuple[str, str]:
+    """
+    Descarga el HTML de la declaración soportando URLs completas o identificadores.
+    Retorna (html_text, id_detectado).
+    """
     session = requests.Session()
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'es-ES,es;q=0.9',
     })
-    
-    for url in urls_a_probar:
+
+    # Si es una URL completa
+    if entrada.startswith("http://") or entrada.startswith("https://"):
         try:
-            resp = session.get(url, timeout=20)
+            resp = session.get(entrada, timeout=25)
             if resp.status_code == 200 and "Declaración no disponible" not in resp.text and len(resp.text) > 10000:
-                return resp.text
+                # Extraer ID de la URL
+                match_id = re.search(r'(?:ID=|declaracion=|IDCargo=)([a-zA-Z0-9]+)', entrada)
+                id_detectado = match_id.group(1) if match_id else "web"
+                return resp.text, id_detectado
         except Exception as e:
-            print(f"[!] Error conectando a {url}: {e}")
-            
-    # Si ambas fallan, intentar la primera y retornar lo que haya
-    resp = session.get(urls_a_probar[0], timeout=20)
-    return resp.text
+            print(f"[!] Error al descargar URL directa: {e}")
+
+    # Si es un ID o hash
+    identificador = entrada.strip()
+    match_hash = re.search(r'([a-fA-F0-9]{32})', identificador)
+    match_num = re.search(r'(\d+)', identificador)
+
+    urls_a_probar = []
+    if match_hash:
+        h = match_hash.group(1)
+        urls_a_probar.extend([
+            f"https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?declaracion={h}",
+            f"https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?IDCargo={h}",
+        ])
+    if match_num:
+        n = match_num.group(1)
+        urls_a_probar.extend([
+            f"https://www.infoprobidad.cl/Declaracion/Declaracion?ID={n}",
+            f"https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?ID={n}",
+        ])
+
+    for u in urls_a_probar:
+        try:
+            resp = session.get(u, timeout=25)
+            if resp.status_code == 200 and "Declaración no disponible" not in resp.text and len(resp.text) > 10000:
+                return resp.text, identificador
+        except Exception as e:
+            pass
+
+    # Último intento directo
+    resp = session.get(entrada if entrada.startswith("http") else f"https://www.infoprobidad.cl/Declaracion/Declaracion?ID={identificador}", timeout=25)
+    return resp.text, identificador
 
 
 def parsear_declaracion(html: str) -> dict:
@@ -106,11 +127,7 @@ def parsear_declaracion(html: str) -> dict:
                 cells = [c.get_text(strip=True) for c in r.find_all(['td', 'th'])]
                 if len(cells) == 2:
                     dict_filas[cells[0]] = cells[1]
-                elif len(cells) > 2:
-                    # Fila tabular compleja
-                    pass
         
-        # Clasificar la tabla según sus llaves
         llaves_texto = " ".join(dict_filas.keys()).lower()
         valores_texto = " ".join(dict_filas.values()).lower()
         
@@ -128,7 +145,7 @@ def parsear_declaracion(html: str) -> dict:
             datos["bienes_inmuebles"].append(dict_filas)
         elif "tipo de vehículo" in llaves_texto or "marca" in llaves_texto or "modelo" in llaves_texto:
             datos["vehiculos"].append(dict_filas)
-        elif "r.u.t." in llaves_texto or "razón social" in llaves_texto and "acreedor" not in llaves_texto:
+        elif "r.u.t." in llaves_texto or ("razón social" in llaves_texto and "acreedor" not in llaves_texto):
             if "título (derecho o acción)" in llaves_texto or "giro registrado" in llaves_texto:
                 datos["sociedades_empresas"].append(dict_filas)
             elif "apv" in valores_texto or "fondos mutuos" in valores_texto or "emisor" in llaves_texto:
@@ -141,12 +158,12 @@ def parsear_declaracion(html: str) -> dict:
     return datos
 
 
-def generar_markdown(datos: dict, declaracion_id: str) -> str:
+def generar_markdown(datos: dict, declaracion_id: str, url_fuente: str) -> str:
     """Genera un informe completo en formato Markdown."""
     lines = []
     lines.append(f"# Declaración de Intereses y Patrimonio (DIP) - {datos['nombre_declarante']}")
-    lines.append(f"\n**Identificador InfoProbidad:** `{declaracion_id}`  ")
-    lines.append(f"**Fuente Oficial:** [https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?declaracion={declaracion_id}](https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?declaracion={declaracion_id})  \n")
+    lines.append(f"\n**Identificador:** `{declaracion_id}`  ")
+    lines.append(f"**Fuente Oficial:** [{url_fuente}]({url_fuente})  \n")
     lines.append("---")
     
     # 1. Datos de la Declaración
@@ -212,7 +229,6 @@ def generar_markdown(datos: dict, declaracion_id: str) -> str:
     # 8. Pasivos y Deudas
     lines.append("\n## 8. Pasivos y Deudas")
     if datos["pasivos_deudas"]:
-        total_pesos = 0
         for i, pas in enumerate(datos["pasivos_deudas"], 1):
             lines.append(f"\n### Deuda #{i}")
             for k, v in pas.items():
@@ -223,7 +239,7 @@ def generar_markdown(datos: dict, declaracion_id: str) -> str:
     return "\n".join(lines)
 
 
-def generar_html_imprimible(datos: dict, declaracion_id: str) -> str:
+def generar_html_imprimible(datos: dict, declaracion_id: str, url_fuente: str) -> str:
     """Genera un archivo HTML con diseño editorial impecable, listo para imprimir en PDF."""
     html_template = f"""<!DOCTYPE html>
 <html lang="es">
@@ -311,17 +327,12 @@ def generar_html_imprimible(datos: dict, declaracion_id: str) -> str:
         td {{
             color: #1e293b;
         }}
-        .card-grid {{
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 15px;
-            margin-bottom: 20px;
-        }}
         .data-card {{
             border: 1px solid #e2e8f0;
             border-radius: 6px;
             padding: 15px;
             background: #ffffff;
+            margin-bottom: 15px;
         }}
         .card-header {{
             font-weight: bold;
@@ -363,7 +374,7 @@ def generar_html_imprimible(datos: dict, declaracion_id: str) -> str:
             <h1>{datos['nombre_declarante']}</h1>
             <div class="meta-info">
                 <strong>ID Declaración:</strong> <code>{declaracion_id}</code> | 
-                <strong>Fuente Oficial:</strong> <a href="https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?declaracion={declaracion_id}" target="_blank">infoprobidad.cl</a>
+                <strong>Fuente Oficial:</strong> <a href="{url_fuente}" target="_blank">infoprobidad.cl</a>
             </div>
         </div>
 
@@ -457,46 +468,58 @@ def generar_html_imprimible(datos: dict, declaracion_id: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Extractor de declaraciones completas de InfoProbidad.")
-    parser.add_argument("url_o_id", help="URL completa de InfoProbidad o hash de 32 caracteres")
-    parser.add_argument("--output-dir", default="reportajes/declaraciones_patrimonio", help="Directorio donde guardar los resultados")
+    parser.add_argument("url_o_id", help="URL completa de InfoProbidad, hash de 32 caracteres o ID numérico")
+    parser.add_argument("--dest", default="", help="Carpeta de destino donde guardar el archivo (ej. 'alcalde llanquihue/documentos')")
+    parser.add_argument("--prefix", default="DIP", help="Prefijo para los nombres de archivo (por defecto 'DIP')")
     args = parser.parse_args()
 
-    declaracion_id = normalizar_id(args.url_o_id)
-    print(f"[+] Procesando Declaración ID: {declaracion_id}")
+    url_entrada = args.url_o_id.strip()
+    print(f"[+] Conectando a InfoProbidad: {url_entrada}")
     
-    html = descargar_declaracion_html(declaracion_id)
-    if "Declaración no disponible" in html:
+    html, declaracion_id = descargar_declaracion_html(url_entrada)
+    if "Declaración no disponible" in html or len(html) < 5000:
         print("[-] Error: La declaración no está disponible o el ID es inválido.")
         sys.exit(1)
         
     datos = parsear_declaracion(html)
-    print(f"[+] Declarante detectado: {datos['nombre_declarante']}")
+    nombre = datos['nombre_declarante']
+    print(f"[+] Declarante detectado: {nombre}")
     
-    # Crear carpeta de salida
-    nombre_seguro = re.sub(r'[^a-zA-Z0-9_]', '_', datos['nombre_declarante'].lower())
-    out_dir = Path(args.output_dir) / f"{nombre_seguro}_{declaracion_id[:8]}"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Construir nombre limpio para archivos: DIP_[Nombre_Persona]_[Fecha]
+    nombre_limpio = re.sub(r'[^a-zA-Z0-9_]', '_', nombre.strip())
+    # Normalizar espacios duplicados
+    nombre_limpio = re.sub(r'_+', '_', nombre_limpio).strip('_')
+    
+    fecha_decl = datos["datos_declaracion"].get("Fecha", "").replace("-", "")
+    base_filename = f"{args.prefix}_{nombre_limpio}"
+    if fecha_decl:
+        base_filename += f"_{fecha_decl}"
+        
+    url_fuente = url_entrada if url_entrada.startswith("http") else f"https://www.infoprobidad.cl/Declaracion/Declaracion?ID={declaracion_id}"
+    
+    # Directorio de destino
+    dest_dir = Path(args.dest) if args.dest else Path("reportajes/declaraciones_patrimonio") / base_filename
+    dest_dir.mkdir(parents=True, exist_ok=True)
     
     # 1. Guardar Markdown
-    md_content = generar_markdown(datos, declaracion_id)
-    md_file = out_dir / "declaracion_completa.md"
+    md_file = dest_dir / f"{base_filename}.md"
     with open(md_file, "w", encoding="utf-8") as f:
-        f.write(md_content)
-    print(f"[+] Markdown generado en: {md_file.resolve()}")
+        f.write(generar_markdown(datos, declaracion_id, url_fuente))
+    print(f"[+] Markdown generado: {md_file.resolve()}")
     
     # 2. Guardar HTML Imprimible
-    html_content = generar_html_imprimible(datos, declaracion_id)
-    html_file = out_dir / "declaracion_imprimible.html"
+    html_file = dest_dir / f"{base_filename}.html"
     with open(html_file, "w", encoding="utf-8") as f:
-        f.write(html_content)
-    print(f"[+] HTML Imprimible generado en: {html_file.resolve()}")
+        f.write(generar_html_imprimible(datos, declaracion_id, url_fuente))
+    print(f"[+] HTML Imprimible generado: {html_file.resolve()}")
     
     # 3. Guardar JSON
-    json_file = out_dir / "declaracion_datos.json"
+    json_file = dest_dir / f"{base_filename}.json"
     with open(json_file, "w", encoding="utf-8") as f:
         json.dump(datos, f, ensure_ascii=False, indent=2)
-    print(f"[+] JSON estructurado generado en: {json_file.resolve()}")
-    print("\n[OK] Proceso finalizado con exito. Puedes abrir el archivo HTML en tu navegador e imprimirlo directamente a PDF.")
+    print(f"[+] JSON estructurado generado: {json_file.resolve()}")
+    
+    print(f"\n[OK] DIP guardada exitosamente como '{base_filename}' en '{dest_dir}'.")
 
 
 if __name__ == "__main__":
