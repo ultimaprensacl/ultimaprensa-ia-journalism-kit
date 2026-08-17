@@ -1,23 +1,39 @@
 # 📰 Última Prensa IA Journalism Kit
-### *Framework de Periodismo de Investigación Documental y Fiscalización Pública Asistido por Inteligencia Artificial*
+### *Framework Universal de Periodismo de Investigación Documental y Fiscalización Pública Asistido por Inteligencia Artificial*
 
 > **Desarrollado por [Última Prensa](https://ultimaprensa.cl) en colaboración con la tecnología de Gemini de Google y los estándares de verificación de la Associated Press (AP).**
+>
+> 🚀 **Compatibilidad Universal:** Diseñado para operar con cualquier CLI o entorno de IA: **Google Antigravity (`agy`)**, **Claude Code CLI (`claude`)**, **Codex / OpenAI CLI**, **Hermes**, **OpenCode**, **Cursor**, **Windsurf** y **Aider**.
 
 ---
 
 ## 📌 1. Visión y Propósito
 
-El **Última Prensa IA Journalism Kit** es un entorno de trabajo y conjunto de herramientas metodológicas diseñadas para estructurar, auditar, investigar y redactar reportajes de **periodismo de fiscalización y datos públicos**, apoyado por modelos avanzados de Inteligencia Artificial (**Gemini / Antigravity**) bajo estrictos controles éticos y lingüísticos.
+El **Última Prensa IA Journalism Kit** es un entorno de trabajo y conjunto de herramientas metodológicas diseñadas para estructurar, auditar, investigar y redactar reportajes de **periodismo de fiscalización y datos públicos**, apoyado por modelos avanzados de Inteligencia Artificial bajo estrictos controles éticos y lingüísticos.
 
 Este framework permite a salas de redacción, periodistas independientes e investigadores procesar miles de páginas de expedientes oficiales, detectar irregularidades contables complejas, construir cronologías judiciales inexpugnables y traducir indicadores técnicos a un lenguaje claro y de alto impacto para la ciudadanía.
 
 ---
 
-## 🔍 2. Metodología: Periodismo Documental y Desk Research
+## 🤖 2. Compatibilidad Multi-CLI y Agentes de IA
+
+El repositorio incluye archivos de configuración nativos para los principales ecosistemas de agentes de IA:
+
+| Asistente / CLI | Archivo de Configuración | Comando / Uso |
+| :--- | :--- | :--- |
+| **Google Antigravity / Gemini** | `GEMINI.md` / `.agents/rules/` / `skills/` | Nativo en Antigravity IDE y CLI `agy` |
+| **Claude Code CLI** | `CLAUDE.md` | `claude` (Anthropic Claude Code) |
+| **Codex / OpenAI CLI** | `AGENTS.md` | Universal Codex / ChatGPT CLI |
+| **Hermes / OpenCode / Aider** | `AGENTS.md` | Compatible con agentes de terminal abiertos |
+| **Cursor / Windsurf / Copilot** | `AGENTS.md` / `.agents/rules/` | Soporte de reglas contextuales de IDE |
+
+---
+
+## 🔍 3. Metodología: Periodismo Documental y Desk Research
 
 El sistema se basa en el principio de **Evidencia Documental Primaria (*Paper Trail*)**:
 
-1. **La Huella Oficial:** La investigación no se sustenta en rumores, filtraciones anónimas o trascendidos. La columna vertebral son los documentos públicos vinculantes:
+1. **La Huella Oficial:** La investigación no se sustenta en rumores o filtraciones anónimas. La base son los documentos públicos vinculantes:
    - Dictámenes y sumarios administrativos de la Contraloría General de la República (CGR).
    - Sentencias de tribunales ordinarios y especiales (TRICEL, TER, Cortes de Apelaciones, Corte Suprema).
    - Licitaciones, órdenes de compra y contratos de Mercado Público.
@@ -27,7 +43,7 @@ El sistema se basa en el principio de **Evidencia Documental Primaria (*Paper Tr
 
 ---
 
-## ⚖️ 3. Estándares Editoriales y Deontológicos
+## ⚖️ 4. Estándares Editoriales y Deontológicos
 
 ### A. Estándares Associated Press (AP) y Fact-Checking
 * **Verificación de Origen:** Todo dato debe contar con atribución precisa (número de oficio, fecha, tribunal o balance).
@@ -46,10 +62,14 @@ El sistema se basa en el principio de **Evidencia Documental Primaria (*Paper Tr
 
 ---
 
-## 🗂️ 4. Estructura del Repositorio
+## 🗂️ 5. Estructura del Repositorio
 
 ```text
 ultimaprensa-ia-journalism-kit/
+│
+├── AGENTS.md                             # Configuración universal para Codex, Hermes, OpenCode
+├── CLAUDE.md                             # Configuración nativa para Claude Code CLI
+├── GEMINI.md                             # Configuración nativa para Gemini / Antigravity
 │
 ├── .agents/
 │   └── rules/
@@ -85,7 +105,7 @@ ultimaprensa-ia-journalism-kit/
 
 ---
 
-## 🛠️ 5. Herramientas y Scripts Incluidos
+## 🛠️ 6. Herramientas y Scripts Incluidos
 
 ### 1. Extractor OCR de Fallos y Dictámenes Escaneados (`scripts/ocr_sentencias_pdf.py`)
 Permite procesar expedientes judiciales de cientos de páginas escaneadas (CGR, TRICEL o Juzgados) mediante OCR neuronal local:
@@ -101,13 +121,13 @@ python scripts/calculo_ratios_municipales.py
 
 ---
 
-## 🚀 6. Flujo de Trabajo para Nuevas Investigaciones
+## 🚀 7. Flujo de Trabajo para Nuevas Investigaciones
 
 1. **Crear el caso:** Duplicar la carpeta `_plantilla_reportaje/` con el nombre del caso (ej. `reportajes/caso_empresa_electrica/`).
 2. **Cargar insumos:**
    - Colocar los informes PDF en `documentos/`.
    - Agregar las URLs de prensa en `fuentes/enlaces_fuentes.txt`.
-3. **Auditoría con el Asistente:**
+3. **Auditoría con cualquier Asistente (Gemini, Claude, Codex, OpenCode):**
    - La IA lee los archivos, ejecuta el OCR si son escaneados y extrae números de decretos, montos y fechas en `notas_y_datos/cronologia_y_datos.md`.
 4. **Redacción Estructurada:**
    - Generación de `reportaje_final.md` con:
@@ -119,13 +139,13 @@ python scripts/calculo_ratios_municipales.py
 
 ---
 
-## 🔒 7. Privacidad y Seguridad
+## 🔒 8. Privacidad y Seguridad
 
 Por defecto, este repositorio incluye un archivo `.gitignore` estricto configurado para que **todos los documentos, audios de entrevistas, imágenes y carpetas individuales de investigación permanezcan 100% locales y privados**, asegurando que solo el framework y las herramientas reutilizables se sincronicen con el repositorio remoto.
 
 ---
 
-## 🤝 8. Créditos y Transparencia
+## 🤝 9. Créditos y Transparencia
 
 Este framework es una iniciativa de periodismo tecnológico desarrollada por el equipo de **[Última Prensa](https://ultimaprensa.cl)** en alianza con la tecnología de **Gemini de Google**.
 
