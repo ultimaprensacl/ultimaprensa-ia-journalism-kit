@@ -1,0 +1,61 @@
+# ====================================================================
+# Última Prensa - .gitignore (Protección de Insumos e Investigaciones)
+# ====================================================================
+
+# Carpetas de investigaciones en curso y archivos privados de prensa
+/Aire/
+/Angel Cabrera/
+/Audios Entrevistas/
+/Caso licencias medicas/
+/Diputados/
+/FOTOS PRENSA/
+/Informes Internacionales/
+/Plagio/
+/Poduje/
+/Rechazo de rendiciones de campaña/
+/Redes de Poder/
+/Reportaje/
+/Sumario red de corrupcion horas extras/
+/alcalde llanquihue/
+/la pyme de hueyusca/
+/reportajes/
+/serviu/
+
+# Carpetas de trabajo generadas
+_plantilla_reportaje/documentos/*
+!_plantilla_reportaje/documentos/.gitkeep
+_plantilla_reportaje/fuentes/*
+!_plantilla_reportaje/fuentes/.gitkeep
+!_plantilla_reportaje/fuentes/enlaces_fuentes.txt
+_plantilla_reportaje/notas_y_datos/*
+!_plantilla_reportaje/notas_y_datos/.gitkeep
+!_plantilla_reportaje/notas_y_datos/cronologia_y_datos.md
+
+# Archivos pesados, documentos y multimedia privados
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.mp3
+*.wav
+*.m4a
+*.mp4
+*.docx
+*.xlsx
+*.zip
+*.tar.gz
+
+# Archivos de sistema y entorno
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+.idea/
+.vscode/
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+*.log
