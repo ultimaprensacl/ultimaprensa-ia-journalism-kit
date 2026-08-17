@@ -113,7 +113,13 @@ Permite procesar expedientes judiciales de cientos de páginas escaneadas (CGR, 
 python scripts/ocr_sentencias_pdf.py ruta/al/expediente.pdf salida_texto.txt
 ```
 
-### 2. Calculadora de Ratios e Impacto Per Cápita (`scripts/calculo_ratios_municipales.py`)
+### 2. Extractor y Formateador de InfoProbidad (`scripts/extractor_infoprobidad.py`)
+Descarga y desglosa al 100% las Declaraciones de Patrimonio e Intereses (DIP) de autoridades desde InfoProbidad.cl, superando el problema de secciones ocultas/colapsadas y generando Markdown, JSON y un HTML imprimible de alta calidad:
+```bash
+python scripts/extractor_infoprobidad.py "https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?declaracion=HASH_O_ID"
+```
+
+### 3. Calculadora de Ratios e Impacto Per Cápita (`scripts/calculo_ratios_municipales.py`)
 Calcula el índice de liquidez corriente y genera automáticamente las equivalencias en obras sociales (postas rurales, ambulancias, pavimentación):
 ```bash
 python scripts/calculo_ratios_municipales.py

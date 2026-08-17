@@ -18,4 +18,5 @@ When operating via Claude Code CLI (`claude`):
 ## Useful Commands
 
 - OCR scanned rulings: `python scripts/ocr_sentencias_pdf.py <input.pdf> <output.txt>`
+- InfoProbidad Declarations Extractor: `python scripts/extractor_infoprobidad.py <url_or_hash>`
 - Municipal Solvency Ratios: `python scripts/calculo_ratios_municipales.py`

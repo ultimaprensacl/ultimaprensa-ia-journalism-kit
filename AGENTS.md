@@ -51,7 +51,13 @@ When dealing with scanned judicial PDFs (TRICEL/TER/CGR):
 python scripts/ocr_sentencias_pdf.py ruta/expediente.pdf salida.txt
 ```
 
-### 2. Financial & Solvency Analysis
+### 2. Asset & Interest Declarations (InfoProbidad)
+When auditing public officials' asset and conflict of interest declarations (DIP):
+```bash
+python scripts/extractor_infoprobidad.py "URL_O_HASH_INFOPROBIDAD"
+```
+
+### 3. Financial & Solvency Analysis
 When auditing municipal balance sheets or Comptroller findings:
 ```bash
 python scripts/calculo_ratios_municipales.py
