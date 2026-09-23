@@ -1,6 +1,7 @@
 """
 Conversor de Reportajes Markdown a HTML Estándar para Substack y CMS Digital
 Última Prensa IA Journalism Kit
+Soporta: Cintillos, H1/H2/H3, Blockquotes, Listas UL/OL, Tablas Markdown, Bloques de Código/Pre y Enlaces
 """
 
 import os
@@ -18,11 +19,97 @@ def md_to_substack_html(md_path: str, output_path: str):
     in_blockquote = False
     in_list = False
     list_type = None
+    in_code_block = False
+    code_block_lines = []
+    in_table = False
+    table_rows = []
+
+    def flush_table():
+        nonlocal in_table, table_rows
+        if not table_rows:
+            in_table = False
+            return
+        
+        t_html = ['<div style="overflow-x: auto; margin: 24px 0;">',
+                  '<table style="width: 100%; border-collapse: collapse; font-size: 15px; text-align: left; border: 1px solid #e2e8f0; font-family: inherit;">']
+        
+        is_first = True
+        for row in table_rows:
+            # Check if separator row
+            if all(re.match(r'^:?-+:?$', c.strip()) for c in row if c.strip()):
+                continue
+            
+            t_html.append('  <tr>')
+            for cell in row:
+                c_clean = cell.strip()
+                c_clean = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', c_clean)
+                c_clean = re.sub(r'\*(.*?)\*', r'<em>\1</em>', c_clean)
+                c_clean = re.sub(r'`(.*?)`', r'<code style="background: #eee; padding: 2px 4px; border-radius: 3px; font-size: 13px;">\1</code>', c_clean)
+                
+                if is_first:
+                    t_html.append(f'    <th style="background: #f8fafc; padding: 10px 14px; border: 1px solid #cbd5e1; font-weight: 700; color: #1e293b;">{c_clean}</th>')
+                else:
+                    t_html.append(f'    <td style="padding: 9px 14px; border: 1px solid #e2e8f0; color: #334155; vertical-align: top;">{c_clean}</td>')
+            t_html.append('  </tr>')
+            is_first = False
+            
+        t_html.append('</table></div>')
+        html_lines.append("\n".join(t_html))
+        table_rows = []
+        in_table = False
 
     i = 0
     while i < len(lines):
-        line = lines[i].rstrip()
-        
+        raw_line = lines[i]
+        line = raw_line.rstrip()
+
+        # Handle Code Block fences
+        if line.strip().startswith('```'):
+            if in_table:
+                flush_table()
+            if in_blockquote:
+                html_lines.append("</blockquote>")
+                in_blockquote = False
+            if in_list:
+                html_lines.append(f"</{list_type}>")
+                in_list = False
+                list_type = None
+
+            if in_code_block:
+                # End of code block
+                code_content = html.escape("\n".join(code_block_lines))
+                html_lines.append(f'<pre style="background: #0f172a; color: #f8fafc; padding: 16px 20px; border-radius: 8px; font-size: 14px; line-height: 1.5; overflow-x: auto; margin: 24px 0;"><code>{code_content}</code></pre>')
+                code_block_lines = []
+                in_code_block = False
+            else:
+                in_code_block = True
+                code_block_lines = []
+            i += 1
+            continue
+
+        if in_code_block:
+            code_block_lines.append(raw_line.rstrip('\r\n'))
+            i += 1
+            continue
+
+        # Handle Tables
+        if line.strip().startswith('|') and line.strip().endswith('|'):
+            if in_blockquote:
+                html_lines.append("</blockquote>")
+                in_blockquote = False
+            if in_list:
+                html_lines.append(f"</{list_type}>")
+                in_list = False
+                list_type = None
+
+            cells = [c for c in line.strip().split('|')[1:-1]]
+            table_rows.append(cells)
+            in_table = True
+            i += 1
+            continue
+        elif in_table:
+            flush_table()
+
         # Empty line
         if not line.strip():
             if in_blockquote:
@@ -51,7 +138,6 @@ def md_to_substack_html(md_path: str, output_path: str):
             i += 1
             continue
 
-
         # H2 / Bajada
         if line.startswith('## '):
             subhead = line[3:].strip()
@@ -74,24 +160,29 @@ def md_to_substack_html(md_path: str, output_path: str):
             if in_list:
                 html_lines.append(f"</{list_type}>")
                 in_list = False
+                list_type = None
             html_lines.append('<hr style="border: 0; height: 1px; background: #e0e0e0; margin: 32px 0;">')
             i += 1
             continue
 
         # Blockquote
-        if line.startswith('> '):
+        if line.startswith('>'):
             if not in_blockquote:
                 html_lines.append('<blockquote style="border-left: 4px solid #d9381e; background: #fdf8f7; padding: 14px 18px; margin: 20px 0; color: #2b2b2b; font-size: 16px; border-radius: 0 6px 6px 0;">')
                 in_blockquote = True
-            bq_line = line[2:].strip()
+            bq_content = line[1:].strip()
+            if not bq_content:
+                html_lines.append('<div style="height: 10px;"></div>')
+                i += 1
+                continue
             # formatting bold/italics
-            bq_line = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', bq_line)
-            bq_line = re.sub(r'\*(.*?)\*', r'<em>\1</em>', bq_line)
-            bq_line = re.sub(r'`(.*?)`', r'<code style="background: #eee; padding: 2px 4px; border-radius: 3px; font-size: 14px;">\1</code>', bq_line)
-            if bq_line.startswith('- '):
-                html_lines.append(f'<p style="margin: 4px 0 4px 16px;">• {bq_line[2:]}</p>')
+            bq_content = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', bq_content)
+            bq_content = re.sub(r'\*(.*?)\*', r'<em>\1</em>', bq_content)
+            bq_content = re.sub(r'`(.*?)`', r'<code style="background: #eee; padding: 2px 4px; border-radius: 3px; font-size: 14px;">\1</code>', bq_content)
+            if bq_content.startswith('- '):
+                html_lines.append(f'<p style="margin: 4px 0 4px 16px; text-align: justify;">• {bq_content[2:]}</p>')
             else:
-                html_lines.append(f'<p style="margin: 6px 0;">{bq_line}</p>')
+                html_lines.append(f'<p style="margin: 6px 0; text-align: justify;">{bq_content}</p>')
             i += 1
             continue
         elif in_blockquote:
@@ -110,7 +201,8 @@ def md_to_substack_html(md_path: str, output_path: str):
             item_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', item_text)
             item_text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', item_text)
             item_text = re.sub(r'`(.*?)`', r'<code style="background: #eee; padding: 2px 4px; border-radius: 3px; font-size: 14px;">\1</code>', item_text)
-            html_lines.append(f'<li style="margin-bottom: 8px;">{item_text}</li>')
+            item_text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2" style="color: #d9381e; text-decoration: underline;">\1</a>', item_text)
+            html_lines.append(f'<li style="margin-bottom: 8px; text-align: justify;">{item_text}</li>')
             i += 1
             continue
 
@@ -127,7 +219,8 @@ def md_to_substack_html(md_path: str, output_path: str):
             item_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', item_text)
             item_text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', item_text)
             item_text = re.sub(r'`(.*?)`', r'<code style="background: #eee; padding: 2px 4px; border-radius: 3px; font-size: 14px;">\1</code>', item_text)
-            html_lines.append(f'<li style="margin-bottom: 8px;">{item_text}</li>')
+            item_text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2" style="color: #d9381e; text-decoration: underline;">\1</a>', item_text)
+            html_lines.append(f'<li style="margin-bottom: 8px; text-align: justify;">{item_text}</li>')
             i += 1
             continue
 
@@ -141,18 +234,24 @@ def md_to_substack_html(md_path: str, output_path: str):
         p_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', p_text)
         p_text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', p_text)
         p_text = re.sub(r'`(.*?)`', r'<code style="background: #eee; padding: 2px 4px; border-radius: 3px; font-size: 14px;">\1</code>', p_text)
+        p_text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2" style="color: #d9381e; text-decoration: underline;">\1</a>', p_text)
         
         # Byline style check
         if p_text.startswith('<strong>Por '):
             html_lines.append(f'<p style="font-size: 15px; color: #555; margin-bottom: 20px; font-style: italic;">{p_text}</p>')
         else:
-            html_lines.append(f'<p style="font-size: 17px; line-height: 1.65; color: #222; margin-bottom: 18px;">{p_text}</p>')
+            html_lines.append(f'<p style="font-size: 17px; line-height: 1.65; color: #222; margin-bottom: 18px; text-align: justify;">{p_text}</p>')
         i += 1
 
+    if in_table:
+        flush_table()
     if in_blockquote:
         html_lines.append("</blockquote>")
     if in_list:
         html_lines.append(f"</{list_type}>")
+    if in_code_block:
+        code_content = html.escape("\n".join(code_block_lines))
+        html_lines.append(f'<pre style="background: #0f172a; color: #f8fafc; padding: 16px 20px; border-radius: 8px; font-size: 14px; line-height: 1.5; overflow-x: auto; margin: 24px 0;"><code>{code_content}</code></pre>')
 
     body_html = "\n".join(html_lines)
 
@@ -163,7 +262,7 @@ def md_to_substack_html(md_path: str, output_path: str):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{html.escape(article_title)}</title>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; background: #ffffff;">
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; background: #ffffff;">
 
 <!-- CONTENIDO COPIABLE DIRECTAMENTE PARA SUBSTACK -->
 <div class="substack-post-body">
@@ -178,11 +277,12 @@ def md_to_substack_html(md_path: str, output_path: str):
 
     print(f"Reportaje exportado a HTML exitosamente en: {output_path}")
 
-if __name__ == '__main__':
-    default_md = '/home/pablo/Escritorio/Ultimaprensa/reportajes/caso_ip_los_lagos/reportaje_final.md'
-    default_html = '/home/pablo/Escritorio/Ultimaprensa/reportajes/caso_ip_los_lagos/reportaje_substack.html'
-    
-    md_in = sys.argv[1] if len(sys.argv) > 1 else default_md
-    html_out = sys.argv[2] if len(sys.argv) > 2 else default_html
-    md_to_substack_html(md_in, html_out)
 
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print("Uso: python scripts/exportar_substack.py <archivo.md> [archivo_salida.html]")
+        sys.exit(1)
+    
+    md_in = sys.argv[1]
+    html_out = sys.argv[2] if len(sys.argv) > 2 else str(Path(md_in).with_suffix(".html"))
+    md_to_substack_html(md_in, html_out)

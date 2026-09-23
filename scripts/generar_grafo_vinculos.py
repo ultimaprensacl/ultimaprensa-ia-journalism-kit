@@ -50,6 +50,51 @@ def export_mermaid(graph: nx.DiGraph, title: str = "Red de Vínculos del Caso") 
     lines.append("```")
     return "\n".join(lines)
 
+def export_followthemoney(graph: nx.DiGraph, output_ftm: Path):
+    """Exporta las entidades y relaciones al formato JSONL de FollowTheMoney (OCCRP)."""
+    try:
+        from followthemoney import model
+    except ImportError:
+        print("[!] Advertencia: followthemoney no está instalado en el entorno. Omitiendo exportación FTM.")
+        return
+
+    cat_to_schema = {
+        "autoridad": "Person",
+        "privado": "Person",
+        "politica": "Person",
+        "asesor": "Person",
+        "sociedad": "Company",
+        "inmueble": "RealEstate",
+        "recurso": "Asset",
+        "judicial": "LegalEntity"
+    }
+
+    entities = []
+    for node, data in graph.nodes(data=True):
+        cat = data.get("cat", "sociedad")
+        schema = cat_to_schema.get(cat, "LegalEntity")
+        ent = model.make_entity(schema)
+        ent.id = f"cl-up-{node}"
+        ent.add("name", data.get("label", node))
+        if data.get("desc"):
+            ent.add("summary", data.get("desc"))
+        ent.add("country", "cl")
+        entities.append(ent.to_dict())
+
+    for u, v, data in graph.edges(data=True):
+        rel = data.get("rel", "Vinculado")
+        link = model.make_entity("UnknownLink")
+        link.id = f"rel-{u}-{v}"
+        link.add("subject", f"cl-up-{u}")
+        link.add("object", f"cl-up-{v}")
+        link.add("role", rel)
+        entities.append(link.to_dict())
+
+    with open(output_ftm, "w", encoding="utf-8") as f:
+        for ent in entities:
+            f.write(json.dumps(ent, ensure_ascii=False) + "\n")
+    print(f"[✓] Grafo FollowTheMoney (OCCRP) exportado en: {output_ftm}")
+
 def export_pyvis_html(graph: nx.DiGraph, output_html: Path, title: str = "Grafo de Vínculos"):
     """Genera un archivo HTML interactivo con física, zoom y filtros."""
     net = Network(height="750px", width="100%", bgcolor="#0F172A", font_color="#F8FAFC", directed=True)
@@ -125,6 +170,7 @@ def main():
     parser.add_argument("--data", type=str, required=True, help="Archivo JSON con los datos del grafo")
     parser.add_argument("--out-html", type=str, default="notas_y_datos/grafo_interactivo.html", help="Ruta de salida del HTML interactivo")
     parser.add_argument("--out-md", type=str, default="notas_y_datos/grafo_mermaid.md", help="Ruta de salida para Mermaid Markdown")
+    parser.add_argument("--out-ftm", type=str, default="", help="Ruta de salida para formato FollowTheMoney JSONL (OCCRP)")
     args = parser.parse_args()
 
     data_path = Path(args.data)
@@ -147,6 +193,12 @@ def main():
     with open(out_md, "w", encoding="utf-8") as f:
         f.write(mermaid_code)
     print(f"[✓] Diagrama Mermaid exportado en: {out_md}")
+
+    # 3. Exportar FollowTheMoney si se solicita
+    if args.out_ftm:
+        out_ftm = Path(args.out_ftm)
+        out_ftm.parent.mkdir(parents=True, exist_ok=True)
+        export_followthemoney(graph, out_ftm)
 
 if __name__ == "__main__":
     main()

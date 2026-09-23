@@ -49,8 +49,9 @@ _plantilla_reportaje/notas_y_datos/*
 __pycache__/
 *.py[cod]
 *$py.class
-.env
-.venv
+.env*
+!.env.example
+.venv*
 env/
 venv/
 .idea/

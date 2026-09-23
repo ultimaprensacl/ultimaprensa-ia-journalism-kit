@@ -99,12 +99,20 @@ ultimaprensa-ia-journalism-kit/
 ├── scripts/                              # Suite de automatización, peritaje y publicación
 │   ├── ingestar_documentos_md.py         # Conversor universal a MD (Microsoft MarkItDown + OCR)
 │   ├── ocr_sentencias_pdf.py             # OCR neuronal (RapidOCR + Microsoft ONNX Runtime)
+│   ├── ocr_paddle.py                     # OCR neuronal avanzado de alta resolución (PaddleOCR)
 │   ├── extractor_infoprobidad.py         # Extractor integral de declaraciones de patrimonio (DIP)
-│   ├── generar_grafo_vinculos.py         # Generador de grafos de redes (Mermaid y HTML/Vis.js)
-│   ├── exportar_substack.py              # Exportador a HTML enriquecido para Substack
+│   ├── investigacion_chile_mcp.py        # Servidor MCP de datos públicos (Mercado Público, DIP, CGR, FTM)
+│   ├── generar_grafo_vinculos.py         # Generador de grafos (Mermaid, HTML/Vis.js y FollowTheMoney)
+│   ├── exportar_substack.py              # Exportador a HTML enriquecido y justificado para Substack
+│   ├── publicar_substack_n8n.py          # Conector automatizado hacia Substack vía n8n webhook
 │   ├── compilador_expediente_pdf.py      # Ensamblador de expedientes blindados con portadas A4
-│   └── calculo_ratios_municipales.py     # Calculadora financiera de balances municipales
+│   ├── calculo_ratios_municipales.py     # Calculadora financiera de balances y honorarios municipales
+│   ├── rae_client.py                     # Cliente pericial de la API oficial de la RAE
+│   ├── rae_mcp_server.py                 # Servidor Model Context Protocol para auditoría léxica RAE
+│   ├── servidor_datasette.py             # Motor web interactivo SQL para bases de datos periciales
+│   └── test_e2e_toolkit.py               # Suite de verificación y pruebas automatizadas End-to-End
 │
+├── .env.example                          # Plantilla de credenciales y variables de entorno
 ├── GUIA_SISTEMA_Y_METODOLOGIA.md         # Manual operativo del sistema
 ├── .gitignore                            # Filtro de privacidad estricto para investigaciones
 └── README.md                             # Este manual institucional
@@ -126,8 +134,8 @@ python scripts/ingestar_documentos_md.py --dir ruta/a/documentos/ --out salida_m
 python scripts/ingestar_documentos_md.py --file fallo_escaneado.pdf --out salida_md/ --ocr
 ```
 
-### 2. Extractor OCR Neuronal de Sentencias (`scripts/ocr_sentencias_pdf.py`)
-Procesa sentencias judiciales y dictámenes escaneados de cientos de fojas utilizando el motor de inferencia neuronal **Microsoft ONNX Runtime** junto a `RapidOCR`:
+### 2. Extractor OCR Neuronal de Sentencias (`scripts/ocr_sentencias_pdf.py` y `scripts/ocr_paddle.py`)
+Procesa sentencias judiciales y dictámenes escaneados de cientos de fojas utilizando inferencia neuronal con **Microsoft ONNX Runtime** + `RapidOCR` o `PaddleOCR`:
 ```bash
 python scripts/ocr_sentencias_pdf.py expediente_pjud.pdf salida_texto.txt
 ```
@@ -138,28 +146,49 @@ Descarga y desglosa íntegramente las Declaraciones de Patrimonio e Intereses (D
 python scripts/extractor_infoprobidad.py "https://www.infoprobidad.cl/Declaracion/BuscarDeclaracion?declaracion=HASH_O_ID"
 ```
 
-### 4. Generador de Grafos de Vínculos y Redes de Poder (`scripts/generar_grafo_vinculos.py`)
-Construye mapas relacionales entre autoridades, sociedades, inmuebles, decretos y montos públicos. Exporta simultáneamente a código **Mermaid** (para reportajes en Markdown) y a **HTML interactivo** offline utilizando PyVis / Vis.js:
+### 4. Generador de Grafos y Estándar FollowTheMoney (`scripts/generar_grafo_vinculos.py`)
+Construye mapas relacionales entre autoridades, sociedades, inmuebles, decretos y montos públicos. Exporta simultáneamente a **Mermaid**, **HTML interactivo** (PyVis) y **FollowTheMoney JSONL** (OCCRP / Aleph):
 ```bash
-python scripts/generar_grafo_vinculos.py --data vinculos.json --out red_caso.html --mermaid
+python scripts/generar_grafo_vinculos.py --data vinculos.json --out-html grafo.html --out-md grafo.md --out-ftm grafo.ftm.jsonl
 ```
 
-### 5. Conversor a Substack CMS (`scripts/exportar_substack.py`)
-Transforma artículos de investigación y columnas redactadas en Markdown a HTML optimizado para la plataforma Substack, aplicando cintillo corporativo en `#d9381e`, bajadas destacadas, citas textuales enriquecidas (*pull quotes*) y tipografía editorial:
+### 5. Servidor MCP de Datos Públicos e Investigación (`scripts/investigacion_chile_mcp.py`)
+Servidor Model Context Protocol que otorga a los agentes de IA capacidad de consultar de forma autónoma:
+- Búsqueda de licitaciones y órdenes de compra en Mercado Público / ChileCompra.
+- Consulta de contratistas del Estado y validación de RUT.
+- Extracción de declaraciones DIP de InfoProbidad.
+- Búsqueda de jurisprudencia y dictámenes de la Contraloría General de la República (CGR).
+- Generación de entidades FollowTheMoney (*Person, Company, Contract, PublicBody*).
+
+### 6. Conversor y Publicador a Substack (`scripts/exportar_substack.py` y `scripts/publicar_substack_n8n.py`)
+Transforma artículos a HTML optimizado para Substack con estricta justificación tipográfica (`text-align: justify;`), citas en bloque enriquecidas y cintillo institucional. Permite publicación directa o vía flujos de n8n:
 ```bash
 python scripts/exportar_substack.py reportaje_final.md reportaje_substack.html
+python scripts/publicar_substack_n8n.py --archivo reportaje_substack.html --modo n8n
 ```
 
-### 6. Compilador de Expedientes Blindados en PDF (`scripts/compilador_expediente_pdf.py`)
+### 7. Compilador de Expedientes Blindados en PDF (`scripts/compilador_expediente_pdf.py`)
 Ensambla escritos judiciales o denuncias en Markdown junto con todos sus anexos probatorios en PDF, intercalando portadas A4 institucionales con numeración y descripción de cada anexo:
 ```bash
-python scripts/compilador_expediente_pdf.py --md escrito_denuncia.md --anexos lista_anexos.json --salida expediente_blindado.pdf --movil escrito_movil.pdf
+python scripts/compilador_expediente_pdf.py --md escrito_denuncia.md --salida expediente_blindado.pdf
 ```
 
-### 7. Calculadora de Ratios Municipales (`scripts/calculo_ratios_municipales.py`)
-Calcula el índice de solvencia, liquidez corriente y sobregasto de personal a honorarios en auditorías municipales, traduciéndolo a pérdida per cápita y equivalencia en obras públicas:
+### 8. Calculadora de Ratios Municipales (`scripts/calculo_ratios_municipales.py`)
+Calcula el índice de solvencia, liquidez corriente y sobregasto de personal a honorarios en auditorías municipales, traduciéndolo a pérdida per cápita y equivalencias comunitarias (*postas, ambulancias, pavimento*):
 ```bash
-python scripts/calculo_ratios_municipales.py
+python scripts/calculo_ratios_municipales.py --comuna Osorno --poblacion 173000 --caja 4500000000 --pasivos 3200000000 --honorarios 850000000 --gastos-personal 3200000000
+```
+
+### 9. Explorador SQL de Bases de Datos con Datasette (`scripts/servidor_datasette.py`)
+Levanta una interfaz web interactiva para auditar bases de datos forenses locales (SQLite y DuckDB) sin requerir instalación compleja:
+```bash
+python scripts/servidor_datasette.py investigacion.db --port 8005
+```
+
+### 10. Suite de Verificación End-to-End (`scripts/test_e2e_toolkit.py`)
+Auditoría y prueba automatizada de todo el toolkit para asegurar que cada herramienta opere al 100 %:
+```bash
+python scripts/test_e2e_toolkit.py
 ```
 
 ---

@@ -66,7 +66,9 @@ Ultimaprensa/
 | **`ingestar_documentos_md.py`** | **Microsoft MarkItDown** + Poppler + OCR | Convierte PDFs, Word, Excel, PPTX e imágenes a Markdown estructurado para análisis con IA. |
 | **`ocr_sentencias_pdf.py`** | **Microsoft ONNX Runtime** + RapidOCR | Extracción neuronal de texto en sentencias y expedientes judiciales escaneados. |
 | **`extractor_infoprobidad.py`** | Python / Requests / BeautifulSoup | Extracción y formato imprimible de declaraciones de intereses y patrimonio (DIP). |
-| **`generar_grafo_vinculos.py`** | PyVis + Vis.js + Mermaid | Trazado de redes de poder y vínculos entre personas, empresas y fondos públicos. |
+| **`generar_grafo_vinculos.py`** | PyVis + Vis.js + Mermaid + **FollowTheMoney (OCCRP)** | Trazado de redes de poder y vínculos entre personas, empresas y fondos públicos con exportación a HTML, Mermaid y FTM. |
+| **`investigacion_chile_mcp.py`** | MCP / ChileCompra / InfoProbidad / CGR | Servidor Model Context Protocol para consulta autónoma de Mercado Público, DIP y dictámenes. |
+| **`servidor_datasette.py`** | **Datasette** + SQLite / DuckDB | Explorador web interactivo y motor SQL para consultar bases de datos periciales. |
 | **`exportar_substack.py`** | Parser tipográfico HTML/CSS | Conversión de Markdown a HTML listo para Substack con formato corporativo. |
 | **`compilador_expediente_pdf.py`** | PyMuPDF + Markdown-PDF | Compilación de denuncias y expedientes blindados con portadas A4 institucionales. |
 | **`calculo_ratios_municipales.py`** | Análisis de ratios financieros | Cálculo de solvencia, liquidez y gasto en personal a honorarios municipal. |
