@@ -60,3 +60,15 @@ Thumbs.db
 [Dd]esktop.ini
 .DS_Store
 *.log
+
+# Node, NPM y Remotion Video
+node_modules/
+**/node_modules/
+motion-video/out/
+motion-video/.remotion/
+.parcel-cache/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
