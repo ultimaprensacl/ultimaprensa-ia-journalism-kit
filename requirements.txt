@@ -1,0 +1,33 @@
+# ====================================================================
+# Última Prensa IA Journalism Kit - Dependencias Oficiales
+# ====================================================================
+# Instalación: pip install -r requirements.txt
+
+# Ingesta documental y conversión a Markdown (MarkItDown + OCR)
+markitdown>=0.0.1
+pymupdf>=1.24.0
+markdown-pdf>=1.3.0
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Inferencia neuronal OCR de expedientes y sentencias judiciales
+rapidocr-onnxruntime>=1.2.0
+onnxruntime>=1.18.0
+
+# Redes de vínculos y grafos de conocimiento
+pyvis>=0.3.2
+networkx>=3.2
+
+# Estándar ontológico de periodismo de investigación (OCCRP)
+followthemoney>=4.10.0
+
+# Análisis forense de datos y exploración SQL
+pandas>=2.2.0
+openpyxl>=3.1.0
+datasette>=0.64.0
+
+# Protocolo MCP (Model Context Protocol) para agentes de IA
+mcp>=1.2.0
+mcp-server-fetch>=2025.1.0
+mcp-server-git>=2025.1.0
