@@ -364,6 +364,10 @@ def main():
             method = req.get("method")
             params = req.get("params", {})
 
+            if req_id is None:
+                # Las notificaciones (como notifications/initialized) no deben recibir respuesta
+                continue
+
             if method == "initialize":
                 resp = {
                     "jsonrpc": "2.0",

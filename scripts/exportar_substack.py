@@ -8,6 +8,17 @@ import os
 import sys
 import re
 import html
+import json
+from pathlib import Path
+
+# Cargar caché de uploads a Substack si existe
+CDN_CACHE = {}
+_cache_path = Path(__file__).resolve().parent.parent.parent / "reportajes" / "caso_relleno_curaco_osorno" / "graficos" / "substack_uploads_cache.json"
+if _cache_path.exists():
+    try:
+        CDN_CACHE = json.loads(_cache_path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
 
 
 def md_to_substack_html(md_path: str, output_path: str):
@@ -129,12 +140,19 @@ def md_to_substack_html(md_path: str, output_path: str):
             i += 1
             continue
 
-        # H1
-        if line.startswith('# '):
-            title = line[2:].strip()
-            if article_title.startswith("Última Prensa"):
-                article_title = f"{title} — Última Prensa"
-            html_lines.append(f'<h1 style="font-size: 32px; font-weight: 800; line-height: 1.25; margin-bottom: 12px; color: #111;">{html.escape(title)}</h1>')
+        # H4 / Subsecciones
+        if line.startswith('#### '):
+            h4_text = line[5:].strip()
+            h4_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', h4_text)
+            h4_text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', h4_text)
+            html_lines.append(f'<h4 style="font-size: 18px; font-weight: 700; line-height: 1.35; margin-top: 24px; margin-bottom: 12px; color: #222;">{h4_text}</h4>')
+            i += 1
+            continue
+
+        # H3 / Ladillos
+        if line.startswith('### '):
+            ladillo = line[4:].strip()
+            html_lines.append(f'<h3 style="font-size: 22px; font-weight: 700; line-height: 1.3; margin-top: 36px; margin-bottom: 16px; color: #1a1a1a;">{html.escape(ladillo)}</h3>')
             i += 1
             continue
 
@@ -145,10 +163,12 @@ def md_to_substack_html(md_path: str, output_path: str):
             i += 1
             continue
 
-        # H3 / Ladillos
-        if line.startswith('### '):
-            ladillo = line[4:].strip()
-            html_lines.append(f'<h3 style="font-size: 22px; font-weight: 700; line-height: 1.3; margin-top: 36px; margin-bottom: 16px; color: #1a1a1a;">{html.escape(ladillo)}</h3>')
+        # H1
+        if line.startswith('# '):
+            title = line[2:].strip()
+            if article_title.startswith("Última Prensa"):
+                article_title = f"{title} — Última Prensa"
+            html_lines.append(f'<h1 style="font-size: 32px; font-weight: 800; line-height: 1.25; margin-bottom: 12px; color: #111;">{html.escape(title)}</h1>')
             i += 1
             continue
 
@@ -228,6 +248,74 @@ def md_to_substack_html(md_path: str, output_path: str):
             html_lines.append(f"</{list_type}>")
             in_list = False
             list_type = None
+
+        # Images and Figures
+        m_img = re.match(r'^!\[(.*?)\]\((.*?)\)$', line.strip())
+        if m_img:
+            if in_blockquote:
+                html_lines.append("</blockquote>")
+                in_blockquote = False
+            if in_list:
+                html_lines.append(f"</{list_type}>")
+                in_list = False
+                list_type = None
+
+            alt_text = m_img.group(1).strip()
+            img_src = m_img.group(2).strip()
+            fname = Path(img_src).name
+            display_src = CDN_CACHE[fname]["url"] if fname in CDN_CACHE else img_src
+
+            # Check if next line is caption
+            caption_text = ""
+            if i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line.startswith('*') and next_line.endswith('*') and not next_line.startswith('**'):
+                    caption_text = next_line[1:-1].strip()
+                    caption_text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', caption_text)
+                    i += 1  # consume caption line
+
+            is_gif = img_src.lower().endswith('.gif')
+            is_carrusel = 'carrusel' in img_src.lower()
+            is_evidencia = 'evidencia' in img_src.lower()
+            is_diagrama = 'diagrama' in img_src.lower()
+
+            if is_carrusel:
+                badge_title = "Rotación Continua (4 Ejes)"
+            elif is_gif:
+                badge_title = "Animación Minimalista Mate"
+            elif is_evidencia:
+                badge_title = "Dossier Forense Oficial"
+            elif is_diagrama:
+                badge_title = "Diagrama de Malla Financiera"
+            else:
+                badge_title = "Infografía Editorial"
+
+            header_extra = f"""    <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 12px 10px 12px; border-bottom: 1px solid #f1f5f9; margin-bottom: 8px;">
+      <span style="font-size: 11px; font-weight: 800; color: #d9381e; text-transform: uppercase; letter-spacing: 1.5px; display: inline-flex; align-items: center; gap: 6px;">
+        <span style="width: 8px; height: 8px; background: #d9381e; border-radius: 50%; display: inline-block;"></span>
+        Infografía Dinámica • Última Prensa
+      </span>
+      <span style="font-size: 11px; color: #64748b; font-weight: 600;">{badge_title}</span>
+    </div>\n"""
+
+            card_bg = "#ffffff"
+            border_color = "#e2e8f0"
+            shadow = "0 8px 24px rgba(0, 0, 0, 0.04)"
+            loading_attr = "eager" if is_gif else "lazy"
+
+            fig_html = f"""<figure style="margin: 32px 0; text-align: center;">
+  <div style="background: {card_bg}; border-radius: 12px; padding: 10px; border: 1px solid {border_color}; box-shadow: {shadow}; overflow: hidden; display: inline-block; max-width: 100%;">
+{header_extra}    <img src="{display_src}" alt="{html.escape(alt_text)}" style="max-width: 100%; height: auto; border-radius: 8px; display: block;" loading="{loading_attr}">
+  </div>"""
+            if caption_text:
+                fig_html += f"""
+  <figcaption style="font-size: 13.5px; color: #64748b; line-height: 1.5; margin-top: 10px; font-style: italic; text-align: center;">
+    {caption_text}
+  </figcaption>"""
+            fig_html += "\n</figure>"
+            html_lines.append(fig_html)
+            i += 1
+            continue
 
         # Normal Paragraph
         p_text = line.strip()

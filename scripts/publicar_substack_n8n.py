@@ -44,6 +44,15 @@ SUBSTACK_SUBDOMAIN = os.environ.get("SUBSTACK_SUBDOMAIN", "ultimaprensacl")
 SUBSTACK_USER_ID = os.environ.get("SUBSTACK_USER_ID", "488459781")
 N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "http://localhost:5678/webhook/publicar-borrador-substack")
 
+# Cargar caché de uploads a Substack si existe
+CDN_CACHE = {}
+_cache_path = Path(__file__).resolve().parent.parent.parent / "reportajes" / "caso_relleno_curaco_osorno" / "graficos" / "substack_uploads_cache.json"
+if _cache_path.exists():
+    try:
+        CDN_CACHE = json.loads(_cache_path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
 def extraer_metadatos_archivo(ruta_archivo: Path):
     """Extrae título, subtítulo y contenido del archivo HTML o Markdown."""
     contenido = ruta_archivo.read_text(encoding="utf-8")
@@ -171,11 +180,125 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
     inner = re.sub(r"<p[^>]*>\s*<strong>\s*Por Equipo de Investigación[^<]*</strong>\s*</p>", "", inner, count=1, flags=re.IGNORECASE)
 
     raw_blocks = []
-    parts = re.split(r"(?=<(?:h[1-6]|p|hr|blockquote|ul|ol)[ >/])", inner, flags=re.IGNORECASE)
+    parts = re.split(r"(?=<(?:h[1-6]|p|hr|blockquote|ul|ol|figure)[ >/])", inner, flags=re.IGNORECASE)
     for part in parts:
         s = part.strip()
         if not s:
             continue
+
+        # Figuras e Imágenes para Substack ProseMirror
+        m_fig = re.match(r"^<figure[^>]*>([\s\S]*?)</figure>", s, re.IGNORECASE)
+        if m_fig:
+            fig_inner = m_fig.group(1)
+            m_img = re.search(r"<img[^>]+src=[\"']([^\"']+)[\"'][^>]*>", fig_inner, re.IGNORECASE)
+            m_alt = re.search(r"<img[^>]+alt=[\"']([^\"']+)[\"'][^>]*>", fig_inner, re.IGNORECASE)
+            m_cap = re.search(r"<figcaption[^>]*>([\s\S]*?)</figcaption>", fig_inner, re.IGNORECASE)
+            if m_img:
+                src = m_img.group(1)
+                alt = m_alt.group(1) if m_alt else ""
+                caption_text = strip_tags(m_cap.group(1)).strip() if m_cap else ""
+
+                # Obtener metadatos desde CDN_CACHE si existe
+                fname = Path(src).name
+                img_url = src
+                w = 840
+                h = 550
+                b_bytes = 100000
+                m_type = "image/gif" if ".gif" in src.lower() else "image/png"
+
+                if fname in CDN_CACHE:
+                    cinfo = CDN_CACHE[fname]
+                    img_url = cinfo.get("url", src)
+                    w = cinfo.get("width", w)
+                    h = cinfo.get("height", h)
+                    b_bytes = cinfo.get("bytes", b_bytes)
+                    m_type = cinfo.get("contentType", m_type)
+                else:
+                    for k, cinfo in CDN_CACHE.items():
+                        if cinfo.get("url") == src:
+                            w = cinfo.get("width", w)
+                            h = cinfo.get("height", h)
+                            b_bytes = cinfo.get("bytes", b_bytes)
+                            m_type = cinfo.get("contentType", m_type)
+                            break
+
+                raw_blocks.append({
+                    "type": "captionedImage",
+                    "content": [{
+                        "type": "image2",
+                        "attrs": {
+                            "src": img_url,
+                            "srcNoWatermark": None,
+                            "fullscreen": None,
+                            "imageSize": None,
+                            "height": h,
+                            "width": w,
+                            "resizeWidth": None,
+                            "bytes": b_bytes,
+                            "alt": alt or None,
+                            "title": None,
+                            "type": m_type,
+                            "href": None,
+                            "belowTheFold": False,
+                            "topImage": False,
+                            "isProcessing": False,
+                            "align": None,
+                            "offset": False
+                        }
+                    }]
+                })
+                if caption_text:
+                    raw_blocks.append({
+                        "type": "paragraph",
+                        "attrs": {"textAlign": "center"},
+                        "content": [{
+                            "type": "text",
+                            "marks": [{"type": "italic"}],
+                            "text": caption_text
+                        }]
+                    })
+            continue
+
+        # Listas no ordenadas (ul)
+        m_ul = re.match(r"^<ul[^>]*>([\s\S]*?)</ul>", s, re.IGNORECASE)
+        if m_ul:
+            lis = re.findall(r"<li[^>]*>([\s\S]*?)</li>", m_ul.group(1), re.IGNORECASE)
+            items_nodes = []
+            for li in lis:
+                c_text = strip_tags(li).strip()
+                if c_text:
+                    items_nodes.append({
+                        "type": "list_item",
+                        "content": [{
+                            "type": "paragraph",
+                            "attrs": {"textAlign": "justify"},
+                            "content": parse_inline(li)
+                        }]
+                    })
+            if items_nodes:
+                raw_blocks.append({"type": "bullet_list", "content": items_nodes})
+            continue
+
+        # Listas ordenadas (ol)
+        m_ol = re.match(r"^<ol[^>]*>([\s\S]*?)</ol>", s, re.IGNORECASE)
+        if m_ol:
+            lis = re.findall(r"<li[^>]*>([\s\S]*?)</li>", m_ol.group(1), re.IGNORECASE)
+            items_nodes = []
+            for li in lis:
+                c_text = strip_tags(li).strip()
+                if c_text:
+                    items_nodes.append({
+                        "type": "list_item",
+                        "content": [{
+                            "type": "paragraph",
+                            "attrs": {"textAlign": "justify"},
+                            "content": parse_inline(li)
+                        }]
+                    })
+            if items_nodes:
+                raw_blocks.append({"type": "ordered_list", "content": items_nodes})
+            continue
+
         # Encabezados
         m_h = re.match(r"^<h(\d)[^>]*>(.*?)</h\1>", s, re.DOTALL | re.IGNORECASE)
         if m_h:
@@ -257,6 +380,7 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
                 "attrs": {"textAlign": "justify"},
                 "content": [{"type": "text", "text": cleaned}]
             })
+
 
     # Fusionar listas adyacentes del mismo tipo para orden y limpieza
     merged_blocks = []
