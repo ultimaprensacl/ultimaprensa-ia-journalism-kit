@@ -199,6 +199,7 @@ def md_to_substack_html(md_path: str, output_path: str):
             bq_content = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', bq_content)
             bq_content = re.sub(r'\*(.*?)\*', r'<em>\1</em>', bq_content)
             bq_content = re.sub(r'`(.*?)`', r'<code style="background: #eee; padding: 2px 4px; border-radius: 3px; font-size: 14px;">\1</code>', bq_content)
+            bq_content = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2" style="color: #d9381e; text-decoration: underline;">\1</a>', bq_content)
             if bq_content.startswith('- '):
                 html_lines.append(f'<p style="margin: 4px 0 4px 16px; text-align: justify;">• {bq_content[2:]}</p>')
             else:

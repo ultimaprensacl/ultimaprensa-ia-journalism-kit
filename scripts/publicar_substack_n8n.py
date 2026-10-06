@@ -46,12 +46,12 @@ N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "http://localhost:5678/webho
 
 # Cargar caché de uploads a Substack si existe
 CDN_CACHE = {}
-_cache_path = Path(__file__).resolve().parent.parent.parent / "reportajes" / "caso_relleno_curaco_osorno" / "graficos" / "substack_uploads_cache.json"
-if _cache_path.exists():
+for cp in Path(__file__).resolve().parent.parent.parent.glob("reportajes/**/substack_uploads_cache.json"):
     try:
-        CDN_CACHE = json.loads(_cache_path.read_text(encoding="utf-8"))
+        CDN_CACHE.update(json.loads(cp.read_text(encoding="utf-8")))
     except Exception:
         pass
+
 
 def extraer_metadatos_archivo(ruta_archivo: Path):
     """Extrae título, subtítulo y contenido del archivo HTML o Markdown."""
@@ -65,13 +65,33 @@ def extraer_metadatos_archivo(ruta_archivo: Path):
         import re
         m_title = re.search(r"<title>(.*?)</title>", contenido, re.IGNORECASE)
         if m_title:
-            titulo = m_title.group(1).strip()
-        m_h1 = re.search(r"<h1[^>]*>(.*?)</h1>", contenido, re.IGNORECASE)
-        if m_h1 and not titulo:
-            titulo = re.sub(r"<[^>]+>", "", m_h1.group(1)).strip()
-        m_p = re.search(r"<p[^>]*class=[\"']lead[\"'][^>]*>(.*?)</p>", contenido, re.IGNORECASE)
-        if m_p:
-            subtitulo = re.sub(r"<[^>]+>", "", m_p.group(1)).strip()
+            t_cand = m_title.group(1).strip()
+            t_cand = re.sub(r"\s*[—|\-]\s*Última Prensa\s*$", "", t_cand, flags=re.IGNORECASE).strip()
+            if t_cand.upper() not in ["INVESTIGACIÓN ESPECIAL", "OPINIÓN", "REPORTAJE", ""]:
+                titulo = t_cand
+
+        all_h1s = re.findall(r"<h1[^>]*>(.*?)</h1>", contenido, re.IGNORECASE)
+        for h1_raw in all_h1s:
+            cleaned_h1 = re.sub(r"<[^>]+>", "", h1_raw).strip()
+            if cleaned_h1.upper() not in ["INVESTIGACIÓN ESPECIAL", "OPINIÓN", "REPORTAJE"] and not titulo:
+                titulo = cleaned_h1
+                break
+
+        m_sub = re.search(r"<h1[^>]*>[\s\S]*?</h1>\s*<h2[^>]*>(.*?)</h2>", contenido, re.IGNORECASE)
+        if m_sub:
+            subtitulo = re.sub(r"<[^>]+>", "", m_sub.group(1)).strip()
+        else:
+            m_p = re.search(r"<p[^>]*class=[\"']lead[\"'][^>]*>(.*?)</p>", contenido, re.IGNORECASE)
+            if m_p:
+                subtitulo = re.sub(r"<[^>]+>", "", m_p.group(1)).strip()
+            else:
+                m_bq = re.search(r"<h1[^>]*>[\s\S]*?</h1>\s*<blockquote[^>]*>([\s\S]*?)</blockquote>", contenido, re.IGNORECASE)
+                if m_bq:
+                    subtitulo = re.sub(r"<[^>]+>", "", m_bq.group(1)).strip()
+                else:
+                    m_h3 = re.search(r"<h3[^>]*>(.*?)</h3>", contenido, re.IGNORECASE)
+                    if m_h3 and "fuente" not in m_h3.group(1).lower():
+                        subtitulo = re.sub(r"<[^>]+>", "", m_h3.group(1)).strip()
     elif ruta_archivo.suffix.lower() == ".md":
         # Si es markdown, buscar primer h1 y compilar a html básico
         lines = contenido.splitlines()
@@ -180,7 +200,7 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
     inner = re.sub(r"<p[^>]*>\s*<strong>\s*Por Equipo de Investigación[^<]*</strong>\s*</p>", "", inner, count=1, flags=re.IGNORECASE)
 
     raw_blocks = []
-    parts = re.split(r"(?=<(?:h[1-6]|p|hr|blockquote|ul|ol|figure)[ >/])", inner, flags=re.IGNORECASE)
+    parts = re.split(r"(?=<(?:h[1-6]|p|hr|blockquote|ul|ol|figure|table)[ >/])", inner, flags=re.IGNORECASE)
     for part in parts:
         s = part.strip()
         if not s:
@@ -206,18 +226,23 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
                 b_bytes = 100000
                 m_type = "image/gif" if ".gif" in src.lower() else "image/png"
 
+                m_dim = re.search(r"_(\d+)x(\d+)\.", src)
+                if m_dim:
+                    w = int(m_dim.group(1))
+                    h = int(m_dim.group(2))
+
                 if fname in CDN_CACHE:
                     cinfo = CDN_CACHE[fname]
                     img_url = cinfo.get("url", src)
-                    w = cinfo.get("width", w)
-                    h = cinfo.get("height", h)
+                    w = cinfo.get("width") or cinfo.get("imageWidth") or w
+                    h = cinfo.get("height") or cinfo.get("imageHeight") or h
                     b_bytes = cinfo.get("bytes", b_bytes)
                     m_type = cinfo.get("contentType", m_type)
                 else:
                     for k, cinfo in CDN_CACHE.items():
                         if cinfo.get("url") == src:
-                            w = cinfo.get("width", w)
-                            h = cinfo.get("height", h)
+                            w = cinfo.get("width") or cinfo.get("imageWidth") or w
+                            h = cinfo.get("height") or cinfo.get("imageHeight") or h
                             b_bytes = cinfo.get("bytes", b_bytes)
                             m_type = cinfo.get("contentType", m_type)
                             break
@@ -299,9 +324,52 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
                 raw_blocks.append({"type": "ordered_list", "content": items_nodes})
             continue
 
+        # Tablas HTML convertidas a listas estructuradas para Substack
+        m_table = re.match(r"^<table[^>]*>([\s\S]*?)</table>", s, re.IGNORECASE)
+        if m_table:
+            rows = re.findall(r"<tr[^>]*>([\s\S]*?)</tr>", m_table.group(1), re.IGNORECASE)
+            table_items = []
+            for tr in rows:
+                tds = re.findall(r"<td[^>]*>([\s\S]*?)</td>", tr, re.IGNORECASE)
+                if tds:
+                    if len(tds) >= 2:
+                        c0 = strip_tags(tds[0]).strip()
+                        c1 = strip_tags(tds[1]).strip()
+                        row_html = f"<strong>{c0}</strong> — {c1}"
+                    else:
+                        row_html = " | ".join(strip_tags(td).strip() for td in tds)
+                    table_items.append({
+                        "type": "list_item",
+                        "content": [{
+                            "type": "paragraph",
+                            "attrs": {"textAlign": "justify"},
+                            "content": parse_inline(row_html)
+                        }]
+                    })
+            if table_items:
+                raw_blocks.append({"type": "bullet_list", "content": table_items})
+            continue
+
         # Encabezados
         m_h = re.match(r"^<h(\d)[^>]*>(.*?)</h\1>", s, re.DOTALL | re.IGNORECASE)
         if m_h:
+            h_text = strip_tags(m_h.group(2)).strip()
+            # Erradicar duplicaciones del título o subtítulo en el cuerpo
+            if titulo_articulo and (h_text.lower() == titulo_articulo.strip().lower() or h_text.lower() in titulo_articulo.strip().lower() or titulo_articulo.strip().lower() in h_text.lower()):
+                continue
+            if subtitulo_articulo and (h_text.lower() == subtitulo_articulo.strip().lower() or h_text.lower() in subtitulo_articulo.strip().lower() or subtitulo_articulo.strip().lower() in h_text.lower()):
+                continue
+            if h_text.upper() in ["INVESTIGACIÓN ESPECIAL", "OPINIÓN"]:
+                raw_blocks.append({
+                    "type": "paragraph",
+                    "attrs": {"textAlign": "justify"},
+                    "content": [{
+                        "type": "text",
+                        "marks": [{"type": "bold"}],
+                        "text": f"{h_text.upper()} | ÚLTIMA PRENSA"
+                    }]
+                })
+                continue
             lvl = int(m_h.group(1))
             # Ajustar jerarquía: h1 y h2 mapean a 2, h3 a 3
             target_lvl = 2 if lvl <= 2 else (3 if lvl == 3 else 4)
@@ -316,6 +384,9 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
         # Bloques de cita (blockquote)
         m_bq = re.match(r"^<blockquote[^>]*>([\s\S]*?)</blockquote>", s, re.IGNORECASE)
         if m_bq:
+            bq_text = strip_tags(m_bq.group(1)).strip()
+            if subtitulo_articulo and (bq_text == subtitulo_articulo.strip() or subtitulo_articulo.strip() in bq_text):
+                continue
             sub_p = re.findall(r"<p[^>]*>([\s\S]*?)</p>", m_bq.group(1), re.IGNORECASE)
             bq_children = []
             if sub_p:
@@ -347,6 +418,10 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
         if m_p:
             raw_text = strip_tags(m_p.group(1)).strip()
             if not raw_text:
+                continue
+            if subtitulo_articulo and raw_text == subtitulo_articulo.strip():
+                continue
+            if titulo_articulo and raw_text == titulo_articulo.strip():
                 continue
             # Detección de viñetas
             if raw_text.startswith("•"):
@@ -391,6 +466,9 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
             merged_blocks[-1]["content"].extend(b["content"])
         else:
             merged_blocks.append(b)
+
+    while merged_blocks and merged_blocks[0].get("type") == "horizontal_rule":
+        merged_blocks.pop(0)
 
     return {"type": "doc", "attrs": {"schemaVersion": "v1"}, "content": merged_blocks}
 
