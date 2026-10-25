@@ -1,0 +1,222 @@
+# =====================================================================
+# Router de modelos NVIDIA NIM — Última Prensa
+# =====================================================================
+# El trial de build.nvidia.com no se cobra por token: se limita por
+# peticiones por minuto. Este archivo decide qué modelo atiende cada
+# tarea y cuántas llamadas se le permiten al día.
+#
+# IMPORTANTE: el catálogo público (GET /v1/models) lista 85 modelos, pero
+# la cuenta NO tiene habilitados todos. Los de abajo se sondearon uno por
+# uno contra esta cuenta (octubre 2026) y quedaron solo los que responden.
+#
+#   Sin habilitar en esta cuenta: moonshotai/kimi-k2.6 y
+#   nvidia/nemotron-nano-3-30b-a3b → 404 "Not found for account".
+#
+# Para volver a sondear:  python scripts/nvidia_router.py estado
+# =====================================================================
+
+servidor:
+  base_url: "https://integrate.api.nvidia.com/v1"
+  timeout_s: 240                # DeepSeek y glm-flash tardan hasta 150 s con razonamiento
+  reintentos_por_modelo: 2      # reintentos ante 5xx o corte de red
+
+# ---------------------------------------------------------------------
+# Cuotas: el "cuánto" de cada modelo. Si uno se queda sin cupo, el
+# router pasa solo al siguiente candidato de la tarea.
+#
+# Criterio medido: Nemotron 3 Ultra es el más rápido (2 s) además del más
+# capaz, así que es el caballo de batalla y lleva el cupo más alto.
+# DeepSeek y glm-5.3-flash tardan entre 90 y 150 s por respuesta.
+# ---------------------------------------------------------------------
+limites:
+  rpm_global: 30                # margen bajo el techo real de ~40 RPM
+  llamadas_dia: 1500            # tope propio de seguridad
+  por_modelo:
+    nvidia/nemotron-3-ultra-550b-a55b:
+      rpm: 8
+      dia: 400
+    z-ai/glm-5.3:
+      rpm: 4
+      dia: 150
+    z-ai/glm-5.3-flash:
+      rpm: 3
+      dia: 100
+    deepseek-ai/deepseek-v4.1-flash:
+      rpm: 3
+      dia: 120
+    nvidia/nemotron-parse-2.0:              # documentos: pesado, se usa por lotes
+      rpm: 4
+      dia: 100
+    nvidia/nemotron-3-embed-1b:
+      rpm: 20
+      dia: 900
+    nvidia/nemotron-3.5-embed-1b:
+      rpm: 20
+      dia: 900
+  por_defecto:
+    rpm: 4
+    dia: 150
+
+# ---------------------------------------------------------------------
+# Tareas editoriales. El orden es la cadena de respaldo: se intenta el
+# primero y, si está sin cupo o falla, se sigue con el siguiente.
+# ---------------------------------------------------------------------
+tareas:
+  redaccion:
+    descripcion: "Redacción y edición de reportajes, columnas y titulares"
+    candidatos:
+      - nvidia/nemotron-3-ultra-550b-a55b
+      - z-ai/glm-5.3
+      - deepseek-ai/deepseek-v4.1-flash
+    parametros:
+      temperature: 0.3
+      top_p: 0.9
+      max_tokens: 8192
+
+  analisis_largo:
+    descripcion: "Dossiers y expedientes completos (200 mil a 1 millón de tokens)"
+    candidatos:
+      - nvidia/nemotron-3-ultra-550b-a55b
+      - deepseek-ai/deepseek-v4.1-flash
+    parametros:
+      temperature: 0.2
+      max_tokens: 16384
+
+  extraccion:
+    descripcion: "Extraer datos duros de documentos, sin creatividad"
+    candidatos:
+      - nvidia/nemotron-3-ultra-550b-a55b
+      - z-ai/glm-5.3
+    parametros:
+      temperature: 0.0
+      max_tokens: 8192
+
+  verificacion:
+    descripcion: "Contraste de afirmaciones contra fuentes y detección de contradicciones"
+    candidatos:
+      - nvidia/nemotron-3-ultra-550b-a55b
+      - z-ai/glm-5.3
+    parametros:
+      temperature: 0.1
+      max_tokens: 8192
+
+  ideas:
+    descripcion: "Exploración de ángulos, hipótesis y preguntas de investigación"
+    candidatos:
+      - nvidia/nemotron-3-ultra-550b-a55b
+      - z-ai/glm-5.3-flash
+    parametros:
+      temperature: 0.8
+      top_p: 0.95
+      max_tokens: 4096
+
+  clasificar:
+    descripcion: "Triage barato y masivo: clasificar, etiquetar, filtrar documentos"
+    candidatos:
+      - nvidia/nemotron-3-ultra-550b-a55b
+      - z-ai/glm-5.3-flash
+    parametros:
+      temperature: 0.0
+      max_tokens: 1024
+
+  embeddings:
+    descripcion: "Búsqueda semántica y recuperación sobre dossiers (RAG)"
+    candidatos:
+      - nvidia/nemotron-3-embed-1b        # simétrico, 2048 dimensiones, responde directo
+      - nvidia/nemotron-3.5-embed-1b      # asimétrico: exige input_type
+    parametros:
+      lote: 32
+      input_type: "query"
+
+  documentos:
+    descripcion: "Extraer texto, tablas y estructura de páginas escaneadas (modelo de visión)"
+    candidatos:
+      - nvidia/nemotron-parse-2.0
+    parametros:
+      temperature: 0.0
+      max_tokens: 8192
+
+# =====================================================================
+# Derivación a CLIs de agente
+# =====================================================================
+# Estos motores usan el plan que el usuario ya paga (Google AI Pro vía
+# Antigravity, o Claude Code), así que no cobran por token: sirven para
+# el pase final editorial, donde lo que importa es la calidad de la
+# prosa y no el volumen.
+#
+#     python scripts/nvidia_router.py derivar --motor agy --tarea apertura \
+#         --archivo dossier.md
+# =====================================================================
+derivacion:
+  # Prioridad editorial: Claude (cuota Opus amplia) > Antigravity (Gemini, para
+  # segunda opinión y para cuando la cuota de Claude esté agotada).
+  # El esfuerzo se elige por tarea: bajo para lo mecánico, alto para el juicio
+  # legal y la verificación exhaustiva.
+  agy:
+    descripcion: "Google Antigravity CLI (plan Google AI Pro del usuario)"
+    ejecutable: "~/.local/bin/agy"
+    habilitado: true
+    timeout_s: 900
+    modelos:
+      apertura: gemini-4-argon-high
+      titular: gemini-3.8-flash-high
+      riesgo_legal: gemini-4-argon-high
+      pase_final: gemini-4-argon-high
+      pase_completo: gemini-4-argon-high
+      por_defecto: gemini-3.8-flash-high
+    esfuerzos: {}   # en agy el nivel ya va en el nombre del modelo (…-high)
+    instrucciones: &instr
+      apertura: >-
+        Reescribe la apertura del reportaje: que el hecho más duro y verificable quede en la
+        primera oración, sin adjetivos, sin valoraciones y sin anunciar lo que viene después.
+        Párrafos breves, voz activa, español de Chile y puntuación de la RAE. Devuelve solo los
+        párrafos, sin títulos ni comentarios.
+      titular: >-
+        Propón cinco titulares para este reportaje. Cada uno debe sostener el hecho principal sin
+        adjetivos ni conclusión editorial, en una línea, con mayúsculas solo en la primera palabra
+        y en nombres propios. Devuelve solo la lista numerada.
+      riesgo_legal: >-
+        Revisa el material como abogado de medios. Lista cada afirmación que podría leerse como
+        imputación sin prueba suficiente, citando la frase exacta, y di qué documento o testimonio
+        falta para sostenerla. Si no hay riesgo, dilo en una línea. No reescribas el texto.
+      pase_final: >-
+        Haz el pase final del reportaje con criterio de editor de investigación: verifica que cada
+        afirmación tenga su fuente en el material, marca contradicciones y señala redundancias.
+        Devuelve la lista de correcciones concretas, no el texto reescrito.
+      pase_completo: >-
+        Haz tres cosas con este material, en este orden y separadas por los rótulos exactos
+        «### APERTURA», «### TITULARES» y «### RIESGO LEGAL».
+        Primero, reescribe la apertura en tres a cinco párrafos: el hecho más duro y verificable en
+        la primera oración, sin adjetivos ni valoraciones, voz activa, español de Chile y
+        puntuación de la RAE. Segundo, propón cinco titulares que sostengan el hecho principal sin
+        adjetivos ni conclusión editorial, con mayúsculas solo en la primera palabra y en nombres
+        propios. Tercero, lista cada afirmación que podría leerse como imputación sin prueba
+        suficiente, citando la frase exacta y el documento o testimonio que falta para sostenerla.
+        No agregues introducción, cierre ni comentarios sobre el proceso.
+
+  claude:
+    descripcion: "Claude Code CLI — motor editorial principal (Claude Pro, cuota Opus amplia)"
+    ejecutable: "claude"
+    habilitado: true
+    nota: >-
+      Cuenta Claude Pro con más cuota Opus que Antigravity, así que este es el motor principal
+      para el trabajo de criterio. Opus para apertura, riesgo legal y pase final; Sonnet para
+      titulares, que son mecánicos y de bajo riesgo. El esfuerzo se fija por tarea más abajo.
+      Con plan Pro el CLI reporta un costo teórico a tarifa de API: no se cobra, sirve como
+      medida del consumo de cuota. Cada llamada arrastra ~23k tokens de prompt de sistema.
+    timeout_s: 900
+    modelos:
+      apertura: opus
+      titular: sonnet
+      riesgo_legal: opus
+      pase_final: opus
+      pase_completo: opus
+      por_defecto: opus
+    esfuerzos:
+      apertura: medium        # escribir bien es criterio, no cómputo: medium alcanza
+      titular: low            # cinco variantes cortas; low evita gastar cuota
+      riesgo_legal: high      # imputaciones sin prueba: aquí no se escatima
+      pase_final: high        # verificar fuente por afirmación contra todo el material
+      pase_completo: high     # apertura + titulares + riesgo legal en una sola llamada
+      por_defecto: high
+    instrucciones: *instr   # las mismas tareas editoriales que agy

@@ -69,6 +69,9 @@ models/
 *.pt
 *.pth
 
+# Contadores del router de modelos NVIDIA (estado local por día)
+.nvidia_router/
+
 # Node, NPM y Remotion Video
 node_modules/
 **/node_modules/
