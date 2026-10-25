@@ -1,51 +1,79 @@
-# Flujo editorial diario
+# Flujo editorial
 
-Una pieza al día, de lunes a viernes: **reportaje grande lunes y miércoles**,
-**nota el resto**. El sistema trabaja de noche y a las 07:00 el borrador está en
-disco con su control de calidad pasado. La firma y la publicación son del editor.
+Una pieza por encargo: **el editor da el tema y el ciclo arranca**. No hay horario
+fijo ni cadencia automática; el formato lo define el encargo (nota corta o reportaje
+grande), no el día de la semana. El borrador queda en disco con su control de calidad
+pasado; la firma y la publicación son del editor.
 
 ## Las piezas
 
 | Pieza | Dónde vive | Quién la provee |
 |---|---|---|
-| Agenda del día | `reportajes/_agenda/AAAA-MM-DD.md` | El editor. Sin agenda no hay investigación. |
+| Tema y ángulo | el chat, o `reportajes/_agenda/AAAA-MM-DD.md` | El editor |
 | Andamiaje y control | `kit-journalism/scripts/pipeline_editorial.py` | Script: abre, marca etapas, lanza el pase, corre QA, cierra |
-| Procedimiento | skill `ultimaprensa-diario` | Hermes, cargada por el cron |
-| Disparador | cron `bf4c6c24196c`, días hábiles 07:00 | Hermes |
+| Procedimiento | skill `ultimaprensa-diario` | Hermes |
+| Radar matinal | cron `bf4c6c24196c` — **pausado** | Opcional, se reactiva si se quiere |
 
-## Rutina del editor
+## Arranque
 
-La noche anterior, o a primera hora:
+Con el tema por delante, un solo comando abre todo:
 
 ```bash
 cd ~/Escritorio/Ultimaprensa
-kit-journalism/.venv/bin/python kit-journalism/scripts/pipeline_editorial.py agenda
+kit-journalism/.venv/bin/python kit-journalism/scripts/pipeline_editorial.py abrir \
+  --tema "Relleno de Curaco: la indemnización a Servitrans" --tipo nota
 ```
 
-Crea `reportajes/_agenda/<hoy>.md` con el tipo ya puesto según el día (lunes y
-miércoles, reportaje). Se completa a mano: `tema`, `angulo`, `apuntar_a`,
-`fuentes_clave`, `no_tocar` y `extension`.
+Crea la agenda del día si no existe, el expediente en `reportajes/<fecha>_<slug>/`
+con `brief.md` y `estado.json`, y deja la primera etapa marcada. Si ya hay una agenda
+escrita a mano, `abrir` sin argumentos la lee.
 
-Si a las 07:00 el archivo no existe o no tiene tema, el agente **no investiga**:
-entrega cinco temas candidatos con su fuente primaria y dice cuál elegiría.
+## Etapas
 
-## Lo que hace el agente
+| Etapa | Producto | Quién |
+|---|---|---|
+| `agenda` | `brief.md` | script |
+| `cobertura` | `cobertura.md` — matriz de medios: qué publicó cada uno, cuándo, con qué fuente y qué dato nuevo aporta | agente (web) |
+| `legal` | `legal.md` — norma aplicable, quién fiscaliza e informes ya emitidos (CGR, SMA, SII, CMF, TDLC, PJUD, DIP) | agente (MCP open-legal-chile) |
+| `dossier` | `dossier.md` — hechos con fuente; lo no verificado, aparte | agente + NVIDIA |
+| `borrador` | `borrador.md` | agente |
+| `pase` | `pase_*.md` — apertura, titulares y riesgo legal | Claude Opus |
+| `qa` | `qa_resultado.md` — redundancia, LanguageTool, verificador | script |
+| `cierre` | `cierre.md` — hecho, pendiente y **no verificado** | script |
 
-1. **Abrir**: crea `reportajes/<fecha>_<slug>/` con `brief.md` y `estado.json`.
-2. **Radar**: búsqueda web y fuentes primarias; escribe `radar.md`.
-3. **Contexto jurídico**: herramientas MCP de open-legal-chile; escribe `legal.md`.
-4. **Dossier**: NVIDIA extrae datos duros del expediente; cada hecho con su fuente.
-5. **Borrador**: `borrador.md` con las reglas de `AGENTS.md`.
-6. **Pase**: Claude Opus reescribe la apertura, propone titulares y lista las
-   imputaciones sin prueba suficiente.
-7. **QA**: redundancia léxica, LanguageTool y verificador del kit.
-8. **Cierre**: `cierre.md` con lo hecho, lo pendiente y **lo que quedó sin verificar**.
+## Cobertura: el corazón del trabajo
+
+La información de un caso chileno está desparramada en diez medios, cada uno con un
+pedazo. El trabajo es agruparla, ordenarla y verificar.
+
+Barrido nacional primero: CIPER, LaBot, Interferencia, El Mostrador, Pauta, Ex-Ante,
+The Clinic, El Desconcierto, Timeline, El Periodista; después Diario Financiero, La
+Tercera, El Mercurio, BioBioChile y CNN Chile; y los regionales del caso —ahí suele
+estar el dato que nadie más tiene—. Verificadores (Fast Check CL, Mala Espina) e
+internacionales (ICIJ, OCCRP, Bellingcat, Reuters, AP, BBC Mundo, El País América,
+La Nación, Folha) solo si el caso tiene arista exterior.
+
+Reglas: cada medio con enlace, fecha y autor; no se copian párrafos, se resume el
+aporte de cada uno; un dato que aparece en un solo medio es pista, no hecho; si dos
+medios se contradicen se anota la contradicción y se busca el documento que la
+resuelva. Lo que nadie publicó también es un hallazgo: el vacío se anota.
+
+## Documentos ya emitidos antes que transparencia
+
+La Ley 20.285 es el último camino, no el primero. Casi todo está publicado: informes
+finales de Contraloría (9.600+), dictámenes, sanciones ambientales de la SMA,
+resoluciones del SII, sanciones de la CMF, jurisprudencia del TDLC, sentencias del
+PJUD, declaraciones de intereses y patrimonio de InfoProbidad, expedientes del SEIA y
+compras en Mercado Público.
+
+Solo si el documento no existe se propone una solicitud de transparencia, y queda
+anotada en el cierre como pendiente.
 
 ## Reparto de motores
 
 | Etapa | Motor | Costo |
 |---|---|---|
-| Radar, lectura de expedientes, extracción, clasificación, embeddings | NVIDIA NIM (trial) | $0 |
+| Cobertura, lectura de expedientes, extracción, clasificación, embeddings | NVIDIA NIM (trial) | $0 |
 | Apertura, titulares, riesgo legal, pase final | Claude (Opus / Sonnet) | plan Pro |
 | Respaldo cuando se agota la cuota de Claude | Antigravity (Gemini 4 Argon / 3.8 Flash) | plan AI Pro |
 
@@ -53,8 +81,8 @@ entrega cinco temas candidatos con su fuente primaria y dice cuál elegiría.
 
 - **Nunca publica.** No sube a Substack, no envía nada, no marca nada como publicado.
 - **Cada hecho lleva fuente.** Lo no verificado se declara en su propia sección.
-- **Los límites de `no_tocar` se respetan** sin excepción, incluso si el ángulo
-  periodístico queda más débil por eso.
+- **Los límites de `no_tocar` se respetan** sin excepción, incluso si el ángulo queda
+  más débil por eso.
 - **Un hueco declarado es periodismo; un hueco tapado es un error publicado.**
 
 ## Operación manual
@@ -63,28 +91,17 @@ entrega cinco temas candidatos con su fuente primaria y dice cuál elegiría.
 P=kit-journalism/.venv/bin/python
 S=kit-journalism/scripts/pipeline_editorial.py
 
-$P $S agenda  --fecha 2026-10-27          # crear la agenda del día
-$P $S abrir   --fecha 2026-10-27          # abrir el expediente
-$P $S estado  --fecha 2026-10-27          # ver qué etapa falta
-$P $S marcar  --fecha 2026-10-27 --etapa dossier
-$P $S pase    --fecha 2026-10-27 --tarea pase_completo --motor claude
-$P $S pase    --fecha 2026-10-27 --motor agy        # respaldo con Gemini
-$P $S qa      --fecha 2026-10-27          # controles automáticos
-$P $S cerrar  --fecha 2026-10-27          # resumen final
+$P $S abrir   --tema "..." --tipo nota     # crear agenda + expediente
+$P $S estado                               # ver qué etapa falta
+$P $S marcar  --etapa cobertura
+$P $S pase    --tarea pase_completo --motor claude
+$P $S pase    --motor agy                  # respaldo con Gemini
+$P $S qa                                   # controles automáticos
+$P $S cerrar                               # resumen final
 ```
 
-Para correr el ciclo completo ahora sin esperar al cron, se le pide al agente en el
-chat, o se dispara el job con `cronjob_manage action='run' job_id='bf4c6c24196c'`.
-
-## Cambiar el horario o los días
-
-El cron es `weekdays at 7am`. Para moverlo:
+Para reactivar el radar matinal, si algún día se quiere:
 
 ```bash
-hermes cron list
-hermes cron update bf4c6c24196c --schedule "weekdays at 6am"
+hermes cron resume bf4c6c24196c
 ```
-
-Si algún día el reportaje grande va martes y jueves en vez de lunes y miércoles,
-se cambia en dos lugares: el tipo por defecto en `comando_agenda()`
-(`weekday() in (0, 2)`) y, si cambia qué días hay pieza, la programación del cron.
