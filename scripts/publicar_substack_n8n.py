@@ -93,22 +93,11 @@ def extraer_metadatos_archivo(ruta_archivo: Path):
                     if m_h3 and "fuente" not in m_h3.group(1).lower():
                         subtitulo = re.sub(r"<[^>]+>", "", m_h3.group(1)).strip()
     elif ruta_archivo.suffix.lower() == ".md":
-        # Si es markdown, buscar primer h1 y compilar a html básico
-        lines = contenido.splitlines()
-        body_lines = []
-        for line in lines:
-            if line.startswith("# ") and not titulo:
-                titulo = line[2:].strip()
-            elif line.startswith("## ") and not subtitulo:
-                subtitulo = line[3:].strip()
-            else:
-                body_lines.append(line)
-        # Importar markdown si está disponible
-        try:
-            import markdown
-            html = markdown.markdown("\n".join(body_lines))
-        except ImportError:
-            html = "\n".join(body_lines)
+        # Compilar automáticamente a HTML estándar de Substack mediante exportar_substack.py
+        from exportar_substack import md_to_substack_html
+        html_temp = ruta_archivo.with_name("substack_export.html")
+        md_to_substack_html(str(ruta_archivo), str(html_temp))
+        return extraer_metadatos_archivo(html_temp)
 
     return titulo, subtitulo, html
 
@@ -157,26 +146,34 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
         s = s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " ")
         return s
 
-    def parse_inline(text):
+    def parse_inline(text, active_marks=None):
+        if active_marks is None:
+            active_marks = []
         nodes = []
         rem = text
         while rem:
             m_link = re.match(r"^<a\s+href=[\"']([^\"']*)[\"'][^>]*>([\s\S]*?)</a>", rem, re.IGNORECASE)
-            m_bold = re.match(r"^<(strong|b)>([\s\S]*?)</(strong|b)>", rem, re.IGNORECASE)
-            m_em = re.match(r"^<(em|i)>([\s\S]*?)</(em|i)>", rem, re.IGNORECASE)
+            m_bold = re.match(r"^<(strong|b)>([\s\S]*?)</\1>", rem, re.IGNORECASE)
+            m_em = re.match(r"^<(em|i)>([\s\S]*?)</\1>", rem, re.IGNORECASE)
             m_code = re.match(r"^<code[^>]*>([\s\S]*?)</code>", rem, re.IGNORECASE)
             m_tag = re.match(r"^<[^>]+>", rem)
             if m_link:
-                nodes.append({"type": "text", "text": strip_tags(m_link.group(2)), "marks": [{"type": "link", "attrs": {"href": m_link.group(1)}}]})
+                new_marks = active_marks + [{"type": "link", "attrs": {"href": m_link.group(1)}}]
+                nodes.extend(parse_inline(m_link.group(2), new_marks))
                 rem = rem[len(m_link.group(0)):]
             elif m_bold:
-                nodes.append({"type": "text", "text": strip_tags(m_bold.group(2)), "marks": [{"type": "bold"}]})
+                new_marks = active_marks + [{"type": "bold"}]
+                nodes.extend(parse_inline(m_bold.group(2), new_marks))
                 rem = rem[len(m_bold.group(0)):]
             elif m_em:
-                nodes.append({"type": "text", "text": strip_tags(m_em.group(2)), "marks": [{"type": "italic"}]})
+                new_marks = active_marks + [{"type": "italic"}]
+                nodes.extend(parse_inline(m_em.group(2), new_marks))
                 rem = rem[len(m_em.group(0)):]
             elif m_code:
-                nodes.append({"type": "text", "text": strip_tags(m_code.group(1)), "marks": [{"type": "code"}]})
+                # Substack ProseMirror code mark cannot combine with bold/italic, keep only code mark
+                cleaned_code = strip_tags(m_code.group(1))
+                if cleaned_code:
+                    nodes.append({"type": "text", "text": cleaned_code, "marks": [{"type": "code"}]})
                 rem = rem[len(m_code.group(0)):]
             elif m_tag and rem.startswith(m_tag.group(0)):
                 rem = rem[len(m_tag.group(0)):]
@@ -185,9 +182,13 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
                 chunk = rem[:next_tag] if next_tag != -1 else rem
                 cleaned = strip_tags(chunk)
                 if cleaned:
-                    nodes.append({"type": "text", "text": cleaned})
+                    node = {"type": "text", "text": cleaned}
+                    if active_marks:
+                        node["marks"] = list(active_marks)
+                    nodes.append(node)
                 rem = rem[next_tag:] if next_tag != -1 else ""
         return nodes if nodes else [{"type": "text", "text": " "}]
+
 
     # Extraer cuerpo interior
     body_match = re.search(r"<body[^>]*>([\s\S]*)</body>", html_text, re.IGNORECASE)
@@ -200,7 +201,11 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
     inner = re.sub(r"<p[^>]*>\s*<strong>\s*Por Equipo de Investigación[^<]*</strong>\s*</p>", "", inner, count=1, flags=re.IGNORECASE)
 
     raw_blocks = []
-    parts = re.split(r"(?=<(?:h[1-6]|p|hr|blockquote|ul|ol|figure|table)[ >/])", inner, flags=re.IGNORECASE)
+    block_pattern = re.compile(
+        r"<figure[^>]*>[\s\S]*?</figure>|<blockquote[^>]*>[\s\S]*?</blockquote>|<ul[^>]*>[\s\S]*?</ul>|<ol[^>]*>[\s\S]*?</ol>|<table[^>]*>[\s\S]*?</table>|<h[1-6][^>]*>[\s\S]*?</h[1-6]>|<p[^>]*>[\s\S]*?</p>|<hr[^>]*>",
+        re.IGNORECASE,
+    )
+    parts = [m.group(0) for m in block_pattern.finditer(inner)]
     for part in parts:
         s = part.strip()
         if not s:
@@ -233,19 +238,26 @@ def parsear_html_a_prosemirror(html_text: str, titulo_articulo: str = "", subtit
 
                 if fname in CDN_CACHE:
                     cinfo = CDN_CACHE[fname]
-                    img_url = cinfo.get("url", src)
-                    w = cinfo.get("width") or cinfo.get("imageWidth") or w
-                    h = cinfo.get("height") or cinfo.get("imageHeight") or h
-                    b_bytes = cinfo.get("bytes", b_bytes)
-                    m_type = cinfo.get("contentType", m_type)
+                    if isinstance(cinfo, dict):
+                        img_url = cinfo.get("url", src)
+                        w = cinfo.get("width") or cinfo.get("imageWidth") or w
+                        h = cinfo.get("height") or cinfo.get("imageHeight") or h
+                        b_bytes = cinfo.get("bytes", b_bytes)
+                        m_type = cinfo.get("contentType", m_type)
+                    else:
+                        img_url = str(cinfo)
                 else:
                     for k, cinfo in CDN_CACHE.items():
-                        if cinfo.get("url") == src:
-                            w = cinfo.get("width") or cinfo.get("imageWidth") or w
-                            h = cinfo.get("height") or cinfo.get("imageHeight") or h
-                            b_bytes = cinfo.get("bytes", b_bytes)
-                            m_type = cinfo.get("contentType", m_type)
-                            break
+                        if isinstance(cinfo, dict):
+                            if cinfo.get("url") == src:
+                                w = cinfo.get("width") or cinfo.get("imageWidth") or w
+                                h = cinfo.get("height") or cinfo.get("imageHeight") or h
+                                b_bytes = cinfo.get("bytes", b_bytes)
+                                m_type = cinfo.get("contentType", m_type)
+                                break
+                        elif isinstance(cinfo, str):
+                            if cinfo == src:
+                                break
 
                 raw_blocks.append({
                     "type": "captionedImage",

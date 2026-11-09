@@ -216,6 +216,35 @@ def test_rae_mcp():
     assert "protocolVersion" in res1.get("result", {}), "RAE MCP initialize falló"
     print("   Servidor MCP RAE validado con éxito.")
 
+def test_iniciar_y_verificar_reportaje(tmp_dir: Path):
+    script_init = SCRIPTS_DIR / "iniciar_reportaje.py"
+    script_verif = SCRIPTS_DIR / "verificar_reportaje.py"
+    script_redun = SCRIPTS_DIR / "detector_redundancia_lexica.py"
+
+    slug_test = "caso_e2e_prueba_automatica"
+    dir_test = BASE_DIR.parent / "reportajes" / slug_test
+
+    # 1. Probar iniciar_reportaje.py
+    cmd_init = [PYTHON_BIN, str(script_init), "Caso de Prueba E2E", "--slug", slug_test, "--forzar"]
+    subprocess.run(cmd_init, capture_output=True, text=True, check=True)
+    assert dir_test.exists(), "No se creó la carpeta de investigación"
+    assert (dir_test / "reportaje_final.md").exists(), "No se creó reportaje_final.md"
+
+    # 2. Probar verificar_reportaje.py
+    cmd_verif = [PYTHON_BIN, str(script_verif), str(dir_test / "reportaje_final.md")]
+    res_verif = subprocess.run(cmd_verif, capture_output=True, text=True)
+    assert res_verif.returncode == 0, f"verificar_reportaje falló: {res_verif.stdout}"
+
+    # 3. Probar detector_redundancia_lexica.py
+    cmd_redun = [PYTHON_BIN, str(script_redun), str(dir_test / "reportaje_final.md")]
+    res_redun = subprocess.run(cmd_redun, capture_output=True, text=True, check=True)
+    assert "ANÁLISIS DE REDUNDANCIA" in res_redun.stdout, "detector_redundancia_lexica falló"
+
+    # Limpiar carpeta temporal de prueba
+    if dir_test.exists():
+        shutil.rmtree(dir_test)
+    print("   Andamiaje automático y auditoría previa verificados con éxito.")
+
 def main():
     tmp_dir = Path(tempfile.mkdtemp(prefix="up_e2e_test_"))
     print(f"[*] Directorio temporal de pruebas: {tmp_dir}")
@@ -228,6 +257,7 @@ def main():
         ("Ingesta Documental MarkItDown", lambda: test_ingestar_documentos_md(tmp_dir)),
         ("Servidor MCP de Investigación Chilena", test_investigacion_chile_mcp),
         ("Servidor MCP de la RAE", test_rae_mcp),
+        ("Andamiaje y Verificación Pre-Publicación", lambda: test_iniciar_y_verificar_reportaje(tmp_dir)),
     ]
     
     passed = 0

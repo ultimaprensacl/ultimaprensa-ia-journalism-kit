@@ -102,6 +102,8 @@ ultimaprensa-ia-journalism-kit/
 │   └── reportaje_final.md                # Plantilla base estructurada
 │
 ├── scripts/                              # Suite de automatización, peritaje y publicación
+│   ├── iniciar_reportaje.py              # Andamiaje automático e inicializador canónico de nuevas investigaciones
+│   ├── verificar_reportaje.py            # Auditor pre-vuelo de 10 reglas editoriales, RAE y KAS
 │   ├── ingestar_documentos_md.py         # Conversor universal a MD (Microsoft MarkItDown + OCR)
 │   ├── ocr_sentencias_pdf.py             # OCR neuronal (RapidOCR + Microsoft ONNX Runtime)
 │   ├── ocr_paddle.py                     # OCR neuronal avanzado de alta resolución (PaddleOCR)
@@ -110,7 +112,7 @@ ultimaprensa-ia-journalism-kit/
 │   ├── generar_grafo_vinculos.py         # Generador de grafos (Mermaid, HTML/Vis.js y FollowTheMoney)
 │   ├── exportar_substack.py              # Exportador a HTML ProseMirror enriquecido y justificado
 │   ├── publicar_substack_n8n.py          # Conector automatizado hacia Substack vía n8n webhook
-│   ├── detector_redundancia_lexica.py    # Auditor de redundancia léxica y variación correferencial
+│   ├── detector_redundancia_lexica.py    # Auditor de redundancia léxica, territorial y variación correferencial
 │   ├── formatear_citas_investigacion.py  # Formateador de citas documentales APA 7 / GIJN
 │   ├── generar_podcast_investigacion.py  # Generador de podcasts narrativos (Kokoro ONNX / Edge TTS)
 │   ├── mezclar_audio_podcast.py          # Mezclador multipista con ducking dinámico y EBU R128

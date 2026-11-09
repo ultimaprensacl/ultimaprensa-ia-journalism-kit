@@ -96,7 +96,13 @@ def leer_agenda(fecha: str) -> dict:
 
 
 def carpeta_caso(fecha: str, datos: dict) -> Path:
-    """La carpeta lleva la fecha para que el orden cronológico sea evidente."""
+    """Carpeta del caso: la que declare la agenda, o una derivada de fecha y tema.
+
+    `carpeta:` en la agenda permite trabajar sobre un expediente que ya existe
+    (por ejemplo `Ulagos Kimun el comienzo`) en vez de crear una carpeta nueva.
+    """
+    if datos.get("carpeta"):
+        return REPORTAJES / str(datos["carpeta"]).strip()
     return REPORTAJES / f"{fecha}_{slug(datos['tema'])}"
 
 
@@ -138,7 +144,8 @@ def escribir_brief(caso: Path, datos: dict, fecha: str) -> None:
 # ---------------------------------------------------------------------------
 # Comandos
 # ---------------------------------------------------------------------------
-def comando_abrir(fecha: str, tema: str | None, tipo: str | None) -> int:
+def comando_abrir(fecha: str, tema: str | None, tipo: str | None,
+                  carpeta: str | None) -> int:
     """Abre el expediente del día. Si el tema viene por parámetro y no hay agenda,
     la crea: así el ciclo se dispara desde el chat sin editar archivos a mano."""
     if tema and not carpeta_agenda(fecha).exists():
@@ -146,6 +153,12 @@ def comando_abrir(fecha: str, tema: str | None, tipo: str | None) -> int:
         ruta = carpeta_agenda(fecha)
         texto = ruta.read_text(encoding="utf-8").replace('tema: ""', f'tema: "{tema}"', 1)
         ruta.write_text(texto, encoding="utf-8")
+    if carpeta:
+        ruta = carpeta_agenda(fecha)
+        texto = ruta.read_text(encoding="utf-8")
+        if "\ncarpeta:" not in texto.split("---")[1]:
+            texto = texto.replace("tema:", f'carpeta: "{carpeta}"\ntema:', 1)
+            ruta.write_text(texto, encoding="utf-8")
     datos = leer_agenda(fecha)
     caso = carpeta_caso(fecha, datos)
     if (caso / "estado.json").exists():
@@ -371,12 +384,14 @@ def main() -> int:
                              "miércoles son reportaje y el resto nota)")
     parser.add_argument("--tema", help="para 'abrir': abre un caso nuevo con este tema, creando "
                                       "la agenda si no existe")
+    parser.add_argument("--carpeta", help="para 'abrir': usa un expediente que ya existe "
+                                         "(nombre bajo reportajes/) en vez de crear uno nuevo")
     args = parser.parse_args()
 
     if args.comando == "agenda":
         return comando_agenda(args.fecha, args.tipo)
     if args.comando == "abrir":
-        return comando_abrir(args.fecha, args.tema, args.tipo)
+        return comando_abrir(args.fecha, args.tema, args.tipo, args.carpeta)
     if args.comando == "estado":
         return comando_estado(args.fecha)
     if args.comando == "marcar":

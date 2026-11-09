@@ -34,7 +34,9 @@ _plantilla_reportaje/notas_y_datos/*
 # Archivos pesados, documentos y multimedia privados
 *.pdf
 *.png
+!assets/brand/*.png
 *.jpg
+!assets/brand/*.jpg
 *.jpeg
 *.mp3
 *.wav

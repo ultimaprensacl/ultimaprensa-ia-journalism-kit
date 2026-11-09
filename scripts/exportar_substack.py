@@ -11,14 +11,14 @@ import html
 import json
 from pathlib import Path
 
-# Cargar caché de uploads a Substack si existe
+# Cargar caché de uploads a Substack de todos los reportajes
 CDN_CACHE = {}
-_cache_path = Path(__file__).resolve().parent.parent.parent / "reportajes" / "caso_relleno_curaco_osorno" / "graficos" / "substack_uploads_cache.json"
-if _cache_path.exists():
+for _cp in (Path(__file__).resolve().parent.parent.parent / "reportajes").glob("**/substack_uploads_cache.json"):
     try:
-        CDN_CACHE = json.loads(_cache_path.read_text(encoding="utf-8"))
+        CDN_CACHE.update(json.loads(_cp.read_text(encoding="utf-8")))
     except Exception:
         pass
+
 
 
 def md_to_substack_html(md_path: str, output_path: str):
